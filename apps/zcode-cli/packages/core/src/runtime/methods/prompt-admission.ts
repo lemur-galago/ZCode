@@ -69,7 +69,23 @@ export async function admitPrompt(
         options?.delivery === "steer_active_turn") &&
       options?.queueDelivery !== "queue";
     if (canSteer) {
-      const delivery = options?.queueDelivery === "guide" ? "guide" : undefined;
+      // Local patch (terminal-steer-queue-delivery): "auto" (the terminal TUI's
+      // busy-turn path) and an explicit "steer_active_turn" must steer as an
+      // INLINE GUIDE so the turn loop drains the input at the next model-step
+      // boundary and continues with another provider request. Upstream the
+      // undefined delivery classified the pending input as a plain "queue"
+      // item, which only the v4/desktop layer ever promotes — in the terminal
+      // the input stayed queued until the turn ended and was then silently
+      // dropped (the TUI clears its queue panel on TurnComplete), losing the
+      // user's message. The v4 bridge never reaches this branch (it sends
+      // guide/queue/startNow through its own admission), so this only changes
+      // the terminal facade path.
+      const delivery =
+        options?.queueDelivery === "guide" ||
+        ((options?.delivery === "auto" || options?.delivery === "steer_active_turn") &&
+          options?.queueDelivery !== "queue")
+          ? "guide"
+          : undefined;
       return await this.steerTurn({
         automationId: options?.automationId,
         commandKind: options?.commandKind,

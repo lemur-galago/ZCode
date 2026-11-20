@@ -47,6 +47,12 @@ type SessionEventHandlers = {
   setTodos: React.Dispatch<React.SetStateAction<TodoItem[]>>;
   setUsage: React.Dispatch<React.SetStateAction<ModelUsageSummary | undefined>>;
   setWorkflowMirror?: WorkflowMirrorSetter;
+  // Local patch (terminal-steer-queue-delivery): safety net for queued inputs
+  // whose turn ended before delivery — instead of silently clearing the queue
+  // panel, the texts are handed back to the composer (app.tsx appends them to
+  // the draft) so the user never loses a typed message.
+  getQueuedInputs?: () => readonly QueuedInput[];
+  restoreDroppedQueuedInputs?: (texts: string[]) => void;
   assistantMessageIdsByToolCallId: Map<string, string>;
   modifiedFileToolCallIds?: Set<string>;
   toolNamesById: Map<string, string>;
@@ -73,24 +79,28 @@ export function applySessionEventToState(
       applyTurnCompleteFallbackResponse(payload, handlers.setMessages);
       handlers.setStatus(copy.status.ready);
       handlers.setActiveTurnId(undefined);
-      handlers.setQueuedInputs?.([]);
+      // Local patch (terminal-steer-queue-delivery): a completed turn must not
+      // swallow undelivered queue items — restore them to the composer.
+      restoreDroppedQueue(handlers);
       break;
     case SessionEventType.TurnError:
     case SessionEventType.ModelError:
       if (stringField(payload, "turnPhase") === "compact") {
         applyCompactTurnErrorEvent(payload, handlers.setLastError, handlers.setMessages);
         handlers.setStatus(copy.status.compactFailed);
-        handlers.setQueuedInputs?.([]);
+        restoreDroppedQueue(handlers);
         break;
       }
       applyTurnErrorEvent(payload, handlers.setLastError, handlers.setMessages);
       handlers.setStatus(copy.status.turnFailed);
-      handlers.setQueuedInputs?.([]);
+      restoreDroppedQueue(handlers);
       break;
     case SessionEventType.TurnSteerQueued:
       applyTurnSteerQueuedEvent(payload, handlers.setQueuedInputs);
       break;
     case SessionEventType.TurnSteerDrained:
+      applyTurnSteerDrainedEvent(payload, handlers);
+      break;
     case SessionEventType.TurnSteerDiscarded:
       applyTurnSteerFinishedEvent(payload, handlers.setQueuedInputs);
       break;
@@ -213,6 +223,45 @@ export function applySessionEventToState(
     default:
       break;
   }
+}
+
+// Local patch (terminal-steer-queue-delivery): drain the queue panel on turn
+// end and hand any undelivered texts back to the composer instead of dropping
+// them. With the core-side guide fix, draining normally empties the queue long
+// before the turn ends; this net covers the residual paths (steering
+// unavailable windows, attachments queued mid-turn, cancelled guides).
+function restoreDroppedQueue(handlers: SessionEventHandlers): void {
+  const texts = (handlers.getQueuedInputs?.() ?? [])
+    .map((input) => input.text)
+    .filter((text) => text.trim().length > 0);
+  handlers.setQueuedInputs?.([]);
+  if (texts.length > 0) handlers.restoreDroppedQueuedInputs?.(texts);
+}
+
+// Local patch (terminal-steer-queue-delivery): when a queued input is drained
+// into the active turn, render it as a real user row in the transcript (the
+// payload carries the persisted text and messageId) and remove it from the
+// queue panel — previously the panel row just vanished with no trace.
+function applyTurnSteerDrainedEvent(
+  payload: Record<string, unknown>,
+  handlers: SessionEventHandlers,
+): void {
+  const drainedInputs = Array.isArray(payload.drainedInputs) ? payload.drainedInputs : [];
+  for (const item of drainedInputs) {
+    const record = asRecord(item);
+    const text = stringField(record, "text");
+    const id = stringField(record, "messageId");
+    if (!text || text.trim().length === 0) continue;
+    handlers.setMessages((current) => [
+      ...current,
+      {
+        content: text,
+        ...(id ? { id } : {}),
+        role: "user" as const,
+      },
+    ]);
+  }
+  applyTurnSteerFinishedEvent(payload, handlers.setQueuedInputs);
 }
 
 function applyTurnSteerQueuedEvent(

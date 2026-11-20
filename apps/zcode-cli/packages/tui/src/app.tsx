@@ -104,6 +104,10 @@ export function TuiApp({
 
   const abortControllerRef = useRef<AbortController | undefined>(undefined);
   const draftRef = useRef("");
+  // Local patch (terminal-steer-queue-delivery): latest-value ref so session
+  // event handlers can read the queue without joining the React effect graph.
+  const queuedInputsRef = useRef<QueuedInput[]>(queuedInputs);
+  queuedInputsRef.current = queuedInputs;
   const draftAttachmentsRef = useRef<DraftAttachment[]>([]);
   const inputEditorRef = useRef<PromptInputEditor | null>(null);
   const inputHistoryIndexRef = useRef(0);
@@ -168,6 +172,26 @@ export function TuiApp({
     [effortCommand, modeCommand, modelCommand, setDraftAttachments, slashCommands],
   );
 
+  // Local patch (terminal-steer-queue-delivery): undelivered queue items are
+  // restored into the composer draft when their turn ends, so a typed message
+  // is never silently lost — the user decides when to resend it.
+  const restoreDroppedQueuedInputs = useCallback(
+    (texts: string[]) => {
+      const restored = texts.filter((text) => text.trim().length > 0);
+      if (restored.length === 0) return;
+      setDraftValue(
+        [...(draftRef.current.trim() ? [draftRef.current] : []), ...restored].join("\n"),
+      );
+      setInputCursorToEndVersion((version) => version + 1);
+      setStatus(
+        restored.length > 1
+          ? `${restored.length} queued inputs restored to the composer.`
+          : "Queued input restored to the composer.",
+      );
+    },
+    [setDraftValue, setInputCursorToEndVersion, setStatus],
+  );
+
   const applyResult = useTuiApplyResult({
     fallback: { locale, loginRequired, mode, model },
     modifiedFileToolCallIds: modifiedFileToolCallIdsRef.current,
@@ -200,6 +224,8 @@ export function TuiApp({
     observeSessionEvent: subagents.onEvent,
     copy: copy.tui,
     getMainSessionId: options.getMainSessionId,
+    getQueuedInputs: () => queuedInputsRef.current,
+    restoreDroppedQueuedInputs,
     setActiveTurnId,
     setCacheStats,
     setContextUsage,
