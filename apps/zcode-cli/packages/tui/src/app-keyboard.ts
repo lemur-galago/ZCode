@@ -1,10 +1,15 @@
 import type { KeyEvent } from "@mbears/opentui-core";
 import type { TuiWorkflowExpansionControls } from "./app-workflow-controller.js";
-import { useKeyboard } from "@mbears/opentui-react";
+import { useKeyboard, usePaste } from "@mbears/opentui-react";
 import { useCallback, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { handleApprovalKey } from "./app-approval.js";
 import { handleSelectionKey } from "./app-input.js";
+import {
+  handleSelectionPaste,
+  isSelectionPasteShortcut,
+  pasteWindowsSelectionInput,
+} from "./app-selection-paste.js";
 import {
   CTRL_C_EXIT_PROMPT,
   PROMPT_DRAFT_CLEARED_STATUS,
@@ -133,6 +138,15 @@ export function useTuiKeyboardControls({
   const ctrlCExitGuardRef = useRef<CtrlCExitGuard>(createCtrlCExitGuard());
   const sidebarShortcutRef = useRef<SidebarShortcutState>(createSidebarShortcutState());
 
+  usePaste((event) => {
+    if (readOnlyView || approvalQueue[0]) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    handleSelectionPaste(event, selection, setSelection, setStatus);
+  });
+
   useKeyboard(
     useCallback(
       (key: KeyEvent) => {
@@ -177,6 +191,10 @@ export function useTuiKeyboardControls({
         if (selection) {
           resetCtrlCExitGuard(ctrlCExitGuardRef.current);
           consumeKey(key);
+          if (selection.input && !selection.pending && isSelectionPasteShortcut(key)) {
+            void pasteWindowsSelectionInput(selection, setSelection, setStatus);
+            return;
+          }
           handleSelectionKey(key, selection, setSelection, setStatus, submitValue, () => {
             abortControllerRef.current?.abort();
           });
