@@ -124,13 +124,17 @@ if (reuseGit) {
 }
 
 // Inner launcher: runs the bundled runtime against the CLI bundle.
+// chcp 65001 is REQUIRED: without it the console decodes the TUI's UTF-8
+// output as the OEM codepage and every box-drawing glyph turns to mojibake.
+// PATH gets the bundled runtime and MinGit so the CLI can spawn git.
 await writeFile(
   resolve(PACKAGE_ROOT, "zcode.cmd"),
   [
     "@echo off",
-    "setlocal",
-    'set "HERE=%~dp0"',
-    '"%HERE%runtime\\node.exe" "%HERE%agent\\zcode.cjs" %*',
+    "setlocal DisableDelayedExpansion",
+    "chcp 65001 >nul",
+    'set "PATH=%~dp0runtime;%~dp0git\\cmd;%PATH%"',
+    '"%~dp0runtime\\node.exe" "%~dp0agent\\zcode.cjs" %*',
     "exit /b %errorlevel%",
     "",
   ].join("\r\n"),

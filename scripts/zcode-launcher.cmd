@@ -1,7 +1,9 @@
 @echo off
 rem ZCode CLI launcher with a once-per-day self-update check.
 rem Layout: <root>\bin\zcode.cmd (this file), <root>\versions\<id>\ZCode-CLI-Portable, <root>\source-repo.txt
-setlocal EnableExtensions
+rem chcp 65001 first: the update check prints Russian UTF-8 text.
+setlocal EnableExtensions DisableDelayedExpansion
+chcp 65001 >nul
 set "ROOT=%~dp0.."
 
 rem Find the newest installed version and its bundled node.
