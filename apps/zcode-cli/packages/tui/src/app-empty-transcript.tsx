@@ -1,6 +1,5 @@
 import React from "react";
 import { palette } from "./app-model.js";
-import { ShimmerText, useShimmerFrame } from "./app-motion.js";
 
 const h = React.createElement as (
   type: React.ElementType | string,
@@ -17,25 +16,24 @@ export const ZCODE_LOGO_LINES = [
   "╚══════╝ ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝",
 ] as const;
 
-const EMPTY_TRANSCRIPT_LOGO_MIN_HEIGHT = ZCODE_LOGO_LINES.length;
+// minimal-empty-transcript-logo: local patch — replace the six-line ASCII
+// banner with the figlet "Rammstein" wordmark "zcode" (ASCII-only glyphs, so
+// every glyph is single-cell even in JetBrains Mono / IDEA terminal — the
+// earlier thin-line variant broke because ╱ renders two cells there). The
+// first letter is the accent color, the rest is the text color. All rows are
+// padded to one common width so per-row centering keeps the columns aligned.
+// Statically centered, no shimmer; the `animated` prop is accepted and
+// ignored. ZCODE_LOGO_LINES stays exported for tests; assertions that expect
+// the banner to render no longer hold.
+const LOGO_ROW_WIDTH = 40;
+const LOGO_ROWS: ReadonlyArray<readonly [string, string]> = [
+  ["  ______", "  ______  _____  _____   ______ "],
+  [" |___   |", "|   ___|/     \\|     \\ |   ___|"],
+  ["  .-`.-`", " |   |__ |     ||      \\|   ___|"],
+  [" |______|", "|______|\\_____/|______/|______|"],
+] as const;
 
-export function EmptyTranscriptLogo({
-  animated = false,
-}: {
-  animated?: boolean;
-} = {}): React.ReactElement {
-  if (animated) {
-    return h(AnimatedEmptyTranscriptLogo);
-  }
-  return renderLogoContent({ animated: false });
-}
-
-function AnimatedEmptyTranscriptLogo(): React.ReactElement {
-  const frameMs = useShimmerFrame(true);
-  return renderLogoContent({ animated: true, frameMs });
-}
-
-function renderLogoContent(input: { animated: boolean; frameMs?: number }): React.ReactElement {
+export function EmptyTranscriptLogo(_props: { animated?: boolean } = {}): React.ReactElement {
   return h(
     "box",
     {
@@ -44,38 +42,24 @@ function renderLogoContent(input: { animated: boolean; frameMs?: number }): Reac
         flexDirection: "column",
         flexGrow: 1,
         justifyContent: "center",
-        minHeight: EMPTY_TRANSCRIPT_LOGO_MIN_HEIGHT,
         width: "100%",
       },
     },
-    ...ZCODE_LOGO_LINES.map((line, index) =>
-      renderLogoText({
-        animated: input.animated,
-        baseColor: palette.accent,
-        frameMs: input.frameMs,
-        key: `zcode-logo-${index}`,
-        text: line,
-      }),
+    ...LOGO_ROWS.map(([firstLetter, rest], index) =>
+      h(
+        "box",
+        { key: `logo-row-${index}`, style: { flexDirection: "row" } },
+        h("text", { style: { fg: palette.accent } }, firstLetter),
+        h("text", { style: { fg: palette.text } }, rest),
+      ),
     ),
   );
 }
 
-function renderLogoText(input: {
-  animated: boolean;
-  baseColor: string;
-  frameMs?: number;
-  key: string;
-  text: string;
-}): React.ReactElement {
-  if (!input.animated) {
-    return h("text", { key: input.key, style: { fg: input.baseColor } }, input.text);
+// Keep the row width invariant check next to the constants: every row must be
+// exactly LOGO_ROW_WIDTH columns or per-row centering shifts the letters.
+for (const [firstLetter, rest] of LOGO_ROWS) {
+  if (firstLetter.length + rest.length !== LOGO_ROW_WIDTH) {
+    throw new Error(`logo row width mismatch: ${firstLetter.length + rest.length} != ${LOGO_ROW_WIDTH}`);
   }
-  return h(ShimmerText, {
-    animated: true,
-    baseColor: input.baseColor,
-    frameMs: input.frameMs,
-    highlightColor: palette.text,
-    key: input.key,
-    text: input.text,
-  });
 }
