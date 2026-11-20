@@ -13,6 +13,9 @@ export function useModelCommandController(
   options: Pick<TuiOptions, "modelOptions" | "initialResult" | "listModelOptions">,
 ): {
   filteredOptions: readonly TuiModelOption[];
+  // Local patch (model-effort-status-switcher): the full unfiltered catalog is
+  // exposed so the status-row model switcher can cycle models at any time.
+  modelOptions: readonly TuiModelOption[];
   reconcileDraft: (value: string) => ModelCommandSelectionState | undefined;
   selectedOption: (submittedValue: string) => TuiModelOption | undefined;
   selection: ModelCommandSelectionState | undefined;
@@ -62,6 +65,7 @@ export function useModelCommandController(
 
   return {
     filteredOptions,
+    modelOptions,
     reconcileDraft,
     selectedOption,
     selection,

@@ -74,6 +74,10 @@ export function AppView(props: {
   modeSelection?: ModeCommandSelectionState;
   model: string;
   modifiedFiles: ModifiedFileStat[];
+  // Local patch (model-effort-status-switcher): click-to-cycle handlers for
+  // the model/effort segments in the status row next to the context badge.
+  onStatusModelClick?: () => void;
+  onStatusEffortClick?: () => void;
   modelOptions: readonly NonNullable<TuiOptions["modelOptions"]>[number][];
   modelSelection?: ModelCommandSelectionState;
   messages: Message[];
@@ -221,6 +225,8 @@ export function AppView(props: {
               model: props.model,
               modelOptions: props.modelOptions,
               modelSelection: props.modelSelection,
+              onStatusModelClick: readOnly ? undefined : props.onStatusModelClick,
+              onStatusEffortClick: readOnly ? undefined : props.onStatusEffortClick,
               queuedInputs,
               selection: composerSelection,
               setDraftValue: readOnly ? () => {} : props.setDraftValue,
@@ -252,6 +258,10 @@ export function ComposerInputArea(props: {
   model: string;
   modelOptions: readonly NonNullable<TuiOptions["modelOptions"]>[number][];
   modelSelection?: ModelCommandSelectionState;
+  // Local patch (model-effort-status-switcher): click-to-cycle handlers for
+  // the status row segments next to the context badge.
+  onStatusModelClick?: () => void;
+  onStatusEffortClick?: () => void;
   queuedInputs: QueuedInput[];
   selection?: SelectionState;
   setDraftValue: (value: string) => void;
@@ -334,6 +344,14 @@ export function ComposerInputArea(props: {
       contentWidth: props.contentWidth,
       contextUsage: props.contextUsage,
       copy: props.copy,
+      model: props.model,
+      thoughtLevel: props.thoughtLevel,
+      onStatusModelMouseDown: props.onStatusModelClick
+        ? () => props.onStatusModelClick?.()
+        : undefined,
+      onStatusEffortMouseDown: props.onStatusEffortClick
+        ? () => props.onStatusEffortClick?.()
+        : undefined,
     }),
   );
 }

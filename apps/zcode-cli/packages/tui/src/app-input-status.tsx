@@ -3,7 +3,7 @@ import React from "react";
 import type { ContextUsage } from "./app-model.js";
 import { DEFAULT_TUI_COPY } from "./app-locale.js";
 import { palette } from "./app-model.js";
-import { modelDisplayParts } from "./app-model-ref.js";
+import { modelDisplayParts, UNKNOWN_MODEL_FIELD } from "./app-model-ref.js";
 import { spinnerFrame, useSpinnerFrame } from "./app-motion.js";
 import { displayWidth, truncateDisplay } from "./app-terminal-width.js";
 
@@ -16,6 +16,10 @@ const h = React.createElement as (
 const ACTIVE_STATUS_HEIGHT = 1;
 const ACTIVE_STATUS_HORIZONTAL_PADDING_WIDTH = 1;
 const ACTIVE_STATUS_CONTEXT_SPACER_WIDTH = 1;
+// Local patch (model-effort-status-switcher): separators inside the status
+// row's right-aligned group "model · effort  context badge".
+const STATUS_MODEL_EFFORT_SEPARATOR = " · ";
+const STATUS_RIGHT_GROUP_GAP = "  ";
 const COMPOSER_STATUS_HEIGHT = 1;
 const COMPOSER_STATUS_HORIZONTAL_PADDING_WIDTH = 0;
 const COMPOSER_STATUS_MIN_METADATA_WIDTH = 8;
@@ -32,38 +36,97 @@ type InputComposerStatusParts = {
   thought: string;
 };
 
+// Local patch (model-effort-status-switcher): the status row shows the current
+// model name and thought level next to the context badge; the segments accept
+// mouse-down handlers so a click cycles the value (wired in app.tsx by
+// submitting /model and /effort commands).
+type StatusMouseHandler = (event: { preventDefault: () => void; stopPropagation: () => void }) => void;
+
+type InputActiveStatusOptions = {
+  contentWidth?: number;
+  contextUsage?: ContextUsage;
+  model?: string;
+  thoughtLevel?: string;
+  onStatusModelMouseDown?: StatusMouseHandler;
+  onStatusEffortMouseDown?: StatusMouseHandler;
+};
+
+function triggerStatusMouseHandler(
+  event: { preventDefault: () => void; stopPropagation: () => void },
+  handler: StatusMouseHandler | undefined,
+): void {
+  event.preventDefault();
+  event.stopPropagation();
+  handler?.(event);
+}
+
 export function InputActiveStatus({
   active,
   contentWidth,
   contextUsage,
   copy = DEFAULT_TUI_COPY,
   frameMs,
+  model,
+  thoughtLevel,
+  onStatusModelMouseDown,
+  onStatusEffortMouseDown,
 }: {
   active: boolean;
   contentWidth?: number;
   contextUsage?: ContextUsage;
   copy?: TuiCopy;
   frameMs?: number;
+  model?: string;
+  thoughtLevel?: string;
+  onStatusModelMouseDown?: StatusMouseHandler;
+  onStatusEffortMouseDown?: StatusMouseHandler;
 }): React.ReactElement {
   if (frameMs !== undefined || !active) {
     return inputActiveStatusRow(copy, active ? spinnerFrame(frameMs ?? 0) : undefined, {
       contentWidth,
       contextUsage,
+      model,
+      thoughtLevel,
+      onStatusModelMouseDown,
+      onStatusEffortMouseDown,
     });
   }
-  return h(InputActiveStatusContent, { contentWidth, contextUsage, copy });
+  return h(InputActiveStatusContent, {
+    contentWidth,
+    contextUsage,
+    copy,
+    model,
+    thoughtLevel,
+    onStatusModelMouseDown,
+    onStatusEffortMouseDown,
+  });
 }
 
 function InputActiveStatusContent({
   contentWidth,
   contextUsage,
   copy,
+  model,
+  thoughtLevel,
+  onStatusModelMouseDown,
+  onStatusEffortMouseDown,
 }: {
   contentWidth?: number;
   contextUsage?: ContextUsage;
   copy: TuiCopy;
+  model?: string;
+  thoughtLevel?: string;
+  onStatusModelMouseDown?: StatusMouseHandler;
+  onStatusEffortMouseDown?: StatusMouseHandler;
 }): React.ReactElement {
-  return inputActiveStatusRow(copy, useSpinnerFrame(true), { contentWidth, contextUsage });
+  return inputActiveStatusRow(copy, useSpinnerFrame(true), {
+    contentWidth,
+    contextUsage,
+    model,
+    thoughtLevel,
+    onStatusModelMouseDown,
+    onStatusEffortMouseDown,
+  });
 }
 
 export function InputComposerStatus({
@@ -85,16 +148,21 @@ export function InputComposerStatus({
 export function inputActiveStatusRow(
   copy: TuiCopy,
   frame?: string,
-  options: { contentWidth?: number; contextUsage?: ContextUsage } = {},
+  options: InputActiveStatusOptions = {},
 ): React.ReactElement {
-  const contextBadge = fitStatusContextBadge(
-    inputContextUsageBadge(options.contextUsage),
+  // Local patch (model-effort-status-switcher): the right-aligned group pairs
+  // "model · effort" with the context badge; each segment is a separate text
+  // node with an onMouseDown handler (OpenTUI hit-tests renderables), so the
+  // switcher needs no coordinate math.
+  const rightGroup = fitStatusRightGroup(
+    statusRightGroupParts(options),
     activeStatusContextBadgeWidth({
       contentWidth: options.contentWidth,
       copy,
       frame,
     }),
   );
+  const hasRightGroup = Boolean(rightGroup && (rightGroup.badge || rightGroup.model || rightGroup.effort));
   return h(
     "box",
     {
@@ -118,8 +186,38 @@ export function inputActiveStatusRow(
           h("text", { style: { fg: palette.muted } }, copy.input.activeStatusHint),
         )
       : null,
-    contextBadge ? h("box", { style: { flexGrow: 1, minWidth: 1 } }) : null,
-    contextBadge ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, contextBadge) : null,
+    hasRightGroup ? h("box", { style: { flexGrow: 1, minWidth: 1 } }) : null,
+    rightGroup?.model
+      ? h(
+          "text",
+          {
+            onMouseDown: (event: { preventDefault: () => void; stopPropagation: () => void }) =>
+              triggerStatusMouseHandler(event, options.onStatusModelMouseDown),
+            style: { fg: palette.text, flexShrink: 0 },
+          },
+          rightGroup.model,
+        )
+      : null,
+    rightGroup?.model && rightGroup.effort
+      ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, STATUS_MODEL_EFFORT_SEPARATOR)
+      : null,
+    rightGroup?.effort
+      ? h(
+          "text",
+          {
+            onMouseDown: (event: { preventDefault: () => void; stopPropagation: () => void }) =>
+              triggerStatusMouseHandler(event, options.onStatusEffortMouseDown),
+            style: { fg: palette.warning, flexShrink: 0 },
+          },
+          rightGroup.effort,
+        )
+      : null,
+    rightGroup?.badge && (rightGroup.model || rightGroup.effort)
+      ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, STATUS_RIGHT_GROUP_GAP)
+      : null,
+    rightGroup?.badge
+      ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, rightGroup.badge)
+      : null,
   );
 }
 
@@ -216,14 +314,64 @@ function activeStatusContextBadgeWidth({
   return Math.floor(availableWidth);
 }
 
-function fitStatusContextBadge(
-  contextBadge: string | undefined,
+type StatusRightGroupParts = {
+  badge: string | undefined;
+  effort: string | undefined;
+  model: string | undefined;
+};
+
+function statusRightGroupParts(options: InputActiveStatusOptions): StatusRightGroupParts {
+  const modelParts = modelDisplayParts((options.model ?? "").trim());
+  const model = modelParts.model;
+  return {
+    badge: inputContextUsageBadge(options.contextUsage),
+    effort: (options.thoughtLevel ?? "").trim() || undefined,
+    model:
+      model && model !== UNKNOWN_MODEL_FIELD && model.toLowerCase() !== "unknown"
+        ? model
+        : undefined,
+  };
+}
+
+function fitStatusRightGroup(
+  parts: StatusRightGroupParts,
   maxWidth?: number,
-): string | undefined {
-  if (contextBadge === undefined) return undefined;
-  if (maxWidth === undefined || !Number.isFinite(maxWidth)) return contextBadge;
-  if (maxWidth < STATUS_MIN_CONTEXT_WIDTH) return undefined;
-  return truncateDisplay(contextBadge, Math.floor(maxWidth));
+): Partial<StatusRightGroupParts> {
+  if (maxWidth === undefined || !Number.isFinite(maxWidth)) return parts;
+  if (maxWidth < STATUS_MIN_CONTEXT_WIDTH) return {};
+
+  const gapWidth = displayWidth(STATUS_RIGHT_GROUP_GAP);
+  const separatorWidth = displayWidth(STATUS_MODEL_EFFORT_SEPARATOR);
+  let remaining = Math.floor(maxWidth);
+
+  let badge = parts.badge;
+  if (badge) {
+    if (displayWidth(badge) > remaining) badge = truncateDisplay(badge, remaining);
+    remaining -= displayWidth(badge);
+  }
+
+  if (parts.model || parts.effort) {
+    if (badge) remaining -= gapWidth;
+    if (remaining < STATUS_MIN_CONTEXT_WIDTH) return { badge };
+
+    const modelWidth = parts.model ? displayWidth(parts.model) : 0;
+    const effortWidth = parts.effort ? displayWidth(parts.effort) : 0;
+    const separatorCount = parts.model && parts.effort ? 1 : 0;
+    if (modelWidth + separatorCount * separatorWidth + effortWidth <= remaining) {
+      return { badge, model: parts.model, effort: parts.effort };
+    }
+
+    // Narrow terminal: drop the effort segment first, then truncate the model.
+    if (parts.model) {
+      const model = truncateDisplay(parts.model, remaining);
+      return { badge, model: displayWidth(model) > 0 ? model : undefined };
+    }
+    if (parts.effort) {
+      const effort = truncateDisplay(parts.effort, remaining);
+      return { badge, effort: displayWidth(effort) > 0 ? effort : undefined };
+    }
+  }
+  return { badge };
 }
 
 function fitComposerStatusParts(

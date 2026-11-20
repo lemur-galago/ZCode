@@ -12,6 +12,7 @@ import { createTuiPermissionRequester } from "./app-permission.js";
 import { appendAgentResult } from "./app-submit.js";
 import { useSubmitValue } from "./app-submit-controller.js";
 import { filterSlashCommands, reconcileSlashSelection } from "./app-input.js";
+import { modelOptionValue } from "./app-model-ref.js";
 import { useEffortCommandController } from "./app-effort-command.js";
 import { useInputHistory } from "./app-input-history.js";
 import { useModeCommandController } from "./app-mode-command.js";
@@ -333,6 +334,65 @@ export function TuiApp({
     setStatus,
   });
 
+  // Local patch (model-effort-status-switcher): clicking the model or effort
+  // segment in the status row cycles to the next option by submitting the
+  // same /model or /effort command the composer sends for a typed switch.
+  const cycleStatusModel = useCallback(async () => {
+    if (subagents.selected || approvalQueue[0] || busy) {
+      if (busy) setStatus("Stop or finish the current turn to switch the model.");
+      return;
+    }
+    const listModelOptions = options.listModelOptions;
+    let models = modelCommand.modelOptions;
+    if (models.length === 0 && listModelOptions) {
+      try {
+        models = await listModelOptions();
+      } catch {
+        models = [];
+      }
+    }
+    if (models.length === 0) {
+      setStatus("No models available to switch to.");
+      return;
+    }
+    const current = model.trim().toLowerCase();
+    const currentIndex = models.findIndex(
+      (option) => modelOptionValue(option).toLowerCase() === current,
+    );
+    const next = models[(currentIndex + 1 + models.length) % models.length];
+    void submitValue(`/model ${modelOptionValue(next)}`);
+  }, [
+    approvalQueue.length,
+    busy,
+    model,
+    modelCommand.modelOptions,
+    options.listModelOptions,
+    setStatus,
+    submitValue,
+    subagents.selected,
+  ]);
+
+  const cycleStatusEffort = useCallback(() => {
+    if (subagents.selected || approvalQueue[0] || busy) {
+      if (busy) setStatus("Stop or finish the current turn to switch effort.");
+      return;
+    }
+    const efforts = effortOptions;
+    if (efforts.length === 0) return;
+    const current = thoughtLevel.trim().toLowerCase();
+    const currentIndex = efforts.findIndex((option) => option.id.toLowerCase() === current);
+    const next = efforts[(currentIndex + 1) % efforts.length];
+    void submitValue(`/effort ${next.id}`);
+  }, [
+    approvalQueue.length,
+    busy,
+    effortOptions,
+    setStatus,
+    submitValue,
+    subagents.selected,
+    thoughtLevel,
+  ]);
+
   useTuiKeyboardControls({
     readOnlyView: subagents.selected ? { back: subagents.back } : undefined,
     abortControllerRef,
@@ -407,6 +467,8 @@ export function TuiApp({
     modelSelection: modelCommand.selection,
     modeOptions: modeCommand.filteredOptions,
     modeSelection: modeCommand.selection,
+    onStatusModelClick: cycleStatusModel,
+    onStatusEffortClick: cycleStatusEffort,
     slashCommands: filteredSlashCommands,
     slashSelection,
     status,
