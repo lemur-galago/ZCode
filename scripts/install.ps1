@@ -63,6 +63,9 @@ Push-Location $repo
 try {
     Write-Host "== pnpm install (first run takes a few minutes)"
     & (Join-Path $useNode "corepack.cmd") pnpm install --filter "@zcode/cli..."
+    # pnpm install re-arms the upstream husky hooks; they call pnpm and would
+    # break pushes on machines without a global pnpm. This fork does not use them.
+    git config --unset core.hooksPath 2>$null | Out-Null
     Write-Host "== build"
     & (Join-Path $useNode "corepack.cmd") pnpm --filter "@zcode/cli..." build
     if ($LASTEXITCODE -ne 0) { throw "build failed" }
