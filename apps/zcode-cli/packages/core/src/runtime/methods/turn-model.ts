@@ -69,8 +69,12 @@ export function acceptSubmissionModelSelection(
   ) {
     return previous.persisted;
   }
-  const previousSelection = runtime.getSessionModelSelection();
-  if (!publishedSelections.has(runtime)) publishedSelections.set(runtime, previousSelection);
+  // patch 6 `first-submission-model-selected`: do not seed publishedSelections
+  // with the runtime's current selection. Fresh sessions preload the session
+  // model before the first submission, so the seed equaled the submitted
+  // selection and suppressed the ∅→X model_selected event; without that event
+  // the projection reducer keeps the hardcoded 2e5 default and the TUI context
+  // badge shows 200K instead of the model's real window.
   const appliedSelection = cloneModelSelection(selection);
   runtime.setSessionModelSelection(appliedSelection);
   acceptOffPeakUserTakeover(runtime);
