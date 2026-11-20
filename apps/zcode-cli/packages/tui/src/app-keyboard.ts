@@ -1,6 +1,6 @@
 import type { KeyEvent } from "@mbears/opentui-core";
 import type { TuiWorkflowExpansionControls } from "./app-workflow-controller.js";
-import { useKeyboard, usePaste } from "@mbears/opentui-react";
+import { useKeyboard, usePaste, useRenderer } from "@mbears/opentui-react";
 import { useCallback, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { handleApprovalKey } from "./app-approval.js";
@@ -137,6 +137,7 @@ export function useTuiKeyboardControls({
 }: UseTuiKeyboardControlsOptions): void {
   const ctrlCExitGuardRef = useRef<CtrlCExitGuard>(createCtrlCExitGuard());
   const sidebarShortcutRef = useRef<SidebarShortcutState>(createSidebarShortcutState());
+  const renderer = useRenderer();
 
   usePaste((event) => {
     if (readOnlyView || approvalQueue[0]) {
@@ -199,6 +200,33 @@ export function useTuiKeyboardControls({
             abortControllerRef.current?.abort();
           });
           return;
+        }
+
+        // transcript-scroll-keys: page scrolling for the main transcript.
+        // PgUp/PgDn scroll by one viewport; Ctrl+Home/Ctrl+End jump to the
+        // start/end of the transcript. Plain Home/End stay with the composer
+        // (line navigation). Selection panels and approvals consume these
+        // keys earlier in the chain, so this only fires in the plain chat view.
+        if (
+          key.name === "pageup" ||
+          key.name === "pagedown" ||
+          ((key.name === "home" || key.name === "end") && key.ctrl)
+        ) {
+          const scrollBox = renderer.root?.findDescendantById?.("main-transcript") as
+            | {
+                scrollBy: (delta: number, unit?: "absolute" | "viewport" | "content" | "step") => void;
+                scrollTop: number;
+                scrollHeight: number;
+              }
+            | undefined;
+          if (scrollBox) {
+            consumeKey(key);
+            if (key.name === "pageup") scrollBox.scrollBy(-1, "viewport");
+            else if (key.name === "pagedown") scrollBox.scrollBy(1, "viewport");
+            else if (key.name === "home") scrollBox.scrollTop = 0;
+            else scrollBox.scrollTop = scrollBox.scrollHeight;
+            return;
+          }
         }
 
         if (
