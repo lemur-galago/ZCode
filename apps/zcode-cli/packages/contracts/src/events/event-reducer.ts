@@ -25,6 +25,7 @@ import type {
   PermissionResolvedPayload,
   PermissionDeniedPayload,
   ModelCompletePayload,
+  ModelSelectedPayload,
   SessionModeChangedPayload,
   TargetChangedPayload,
   TargetCompletionVerificationPayload,
@@ -105,6 +106,24 @@ export class EventReducer {
         createdAt: e.timestamp,
         updatedAt: e.timestamp,
         status: "idle" as SessionStatus,
+      };
+    },
+
+    // patch 5 `event-reducer-model-selected-window`: ModelSelected carries the
+    // context window the runtime actually applied (emitModelSelected reads it
+    // from the Active Model). Fresh interactive sessions have no SessionCreated
+    // event, so without this handler the projection keeps the hardcoded 2e5
+    // default and the TUI badge shows 200K instead of the model's real limit.
+    [EventTypes.ModelSelected]: (p, e) => {
+      const payload = e.payload as ModelSelectedPayload;
+      const contextWindow =
+        typeof payload.contextWindow === "number" && payload.contextWindow > 0
+          ? payload.contextWindow
+          : undefined;
+      return {
+        ...p,
+        ...(contextWindow !== undefined ? { contextWindow } : {}),
+        updatedAt: e.timestamp,
       };
     },
 
