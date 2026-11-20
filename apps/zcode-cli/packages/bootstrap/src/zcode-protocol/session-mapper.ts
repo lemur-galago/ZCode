@@ -92,11 +92,21 @@ export async function buildSessionSnapshot(input: {
           ...(input.target === undefined ? {} : { target: input.target }),
           ...(input.lastError === undefined ? {} : { lastError: input.lastError }),
         };
-  const projection = withGoalSummaryTitleFallback(
+  const fallbackProjection = withGoalSummaryTitleFallback(
     projectionWithoutTitleFallback,
     input.session,
     input.messages,
   );
+  // Fresh sessions never emit a session_created event carrying the resolved
+  // window, so the reducer projection keeps its hardcoded 2e5 default and the
+  // UI under-reports the real API limit (GLM-5.3 is 1M). The active model's
+  // registry entry is authoritative for display; hydrated sessions resolve
+  // to the same value, so overriding both paths is safe. [session-projection-context-window]
+  const activeModelContextWindow = input.app.getCurrentModelOption?.()?.contextWindow;
+  const projection =
+    typeof activeModelContextWindow === "number" && activeModelContextWindow > 0
+      ? { ...fallbackProjection, contextWindow: activeModelContextWindow }
+      : fallbackProjection;
   const messages = await mapSnapshotMessages(input.app, input.messages);
   return {
     messages,
