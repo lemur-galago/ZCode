@@ -393,6 +393,14 @@ export function TuiApp({
     thoughtLevel,
   ]);
 
+  // Local patch (status-compact-button): clicking the compact glyph submits
+  // /compact — identical to typing the command, so busy-turn behaviour (the
+  // sendInput command path) matches the manual flow exactly.
+  const submitStatusCompact = useCallback(() => {
+    if (subagents.selected || approvalQueue[0]) return;
+    void submitValue("/compact");
+  }, [approvalQueue.length, submitValue, subagents.selected]);
+
   useTuiKeyboardControls({
     readOnlyView: subagents.selected ? { back: subagents.back } : undefined,
     abortControllerRef,
@@ -469,6 +477,7 @@ export function TuiApp({
     modeSelection: modeCommand.selection,
     onStatusModelClick: cycleStatusModel,
     onStatusEffortClick: cycleStatusEffort,
+    onStatusCompactClick: submitStatusCompact,
     slashCommands: filteredSlashCommands,
     slashSelection,
     status,

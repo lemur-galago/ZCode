@@ -20,6 +20,12 @@ const ACTIVE_STATUS_CONTEXT_SPACER_WIDTH = 1;
 // row's right-aligned group "model · effort  context badge".
 const STATUS_MODEL_EFFORT_SEPARATOR = " · ";
 const STATUS_RIGHT_GROUP_GAP = "  ";
+// Local patch (status-compact-button): clickable compact trigger glyph. The
+// emoji renders ~1.7x taller than text glyphs (user asked for a bigger icon)
+// and takes 2 terminal cells; displayWidth() undercounts astral emoji, so the
+// budget uses the explicit width below (2 cells + 1 trailing space = hit area).
+const STATUS_COMPACT_GLYPH = "🔄 ";
+const STATUS_COMPACT_GLYPH_WIDTH = 3;
 const COMPOSER_STATUS_HEIGHT = 1;
 const COMPOSER_STATUS_HORIZONTAL_PADDING_WIDTH = 0;
 const COMPOSER_STATUS_MIN_METADATA_WIDTH = 8;
@@ -49,6 +55,7 @@ type InputActiveStatusOptions = {
   thoughtLevel?: string;
   onStatusModelMouseDown?: StatusMouseHandler;
   onStatusEffortMouseDown?: StatusMouseHandler;
+  onStatusCompactMouseDown?: StatusMouseHandler;
 };
 
 function triggerStatusMouseHandler(
@@ -70,6 +77,7 @@ export function InputActiveStatus({
   thoughtLevel,
   onStatusModelMouseDown,
   onStatusEffortMouseDown,
+  onStatusCompactMouseDown,
 }: {
   active: boolean;
   contentWidth?: number;
@@ -80,6 +88,7 @@ export function InputActiveStatus({
   thoughtLevel?: string;
   onStatusModelMouseDown?: StatusMouseHandler;
   onStatusEffortMouseDown?: StatusMouseHandler;
+  onStatusCompactMouseDown?: StatusMouseHandler;
 }): React.ReactElement {
   if (frameMs !== undefined || !active) {
     return inputActiveStatusRow(copy, active ? spinnerFrame(frameMs ?? 0) : undefined, {
@@ -89,6 +98,7 @@ export function InputActiveStatus({
       thoughtLevel,
       onStatusModelMouseDown,
       onStatusEffortMouseDown,
+      onStatusCompactMouseDown,
     });
   }
   return h(InputActiveStatusContent, {
@@ -99,6 +109,7 @@ export function InputActiveStatus({
     thoughtLevel,
     onStatusModelMouseDown,
     onStatusEffortMouseDown,
+    onStatusCompactMouseDown,
   });
 }
 
@@ -110,6 +121,7 @@ function InputActiveStatusContent({
   thoughtLevel,
   onStatusModelMouseDown,
   onStatusEffortMouseDown,
+  onStatusCompactMouseDown,
 }: {
   contentWidth?: number;
   contextUsage?: ContextUsage;
@@ -118,6 +130,7 @@ function InputActiveStatusContent({
   thoughtLevel?: string;
   onStatusModelMouseDown?: StatusMouseHandler;
   onStatusEffortMouseDown?: StatusMouseHandler;
+  onStatusCompactMouseDown?: StatusMouseHandler;
 }): React.ReactElement {
   return inputActiveStatusRow(copy, useSpinnerFrame(true), {
     contentWidth,
@@ -126,6 +139,7 @@ function InputActiveStatusContent({
     thoughtLevel,
     onStatusModelMouseDown,
     onStatusEffortMouseDown,
+    onStatusCompactMouseDown,
   });
 }
 
@@ -162,7 +176,9 @@ export function inputActiveStatusRow(
       frame,
     }),
   );
-  const hasRightGroup = Boolean(rightGroup && (rightGroup.badge || rightGroup.model || rightGroup.effort));
+  const hasRightGroup = Boolean(
+    rightGroup && (rightGroup.badge || rightGroup.compact || rightGroup.model || rightGroup.effort),
+  );
   return h(
     "box",
     {
@@ -214,6 +230,21 @@ export function inputActiveStatusRow(
       : null,
     rightGroup?.badge && (rightGroup.model || rightGroup.effort)
       ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, STATUS_RIGHT_GROUP_GAP)
+      : null,
+    // Local patch (status-compact-button): clickable compact glyph right before
+    // the context badge; a compact emoji target (2 cells + trailing space) for
+    // the same /compact command the composer submits — the badge itself stays
+    // a plain indicator.
+    rightGroup?.compact
+      ? h(
+          "text",
+          {
+            onMouseDown: (event: { preventDefault: () => void; stopPropagation: () => void }) =>
+              triggerStatusMouseHandler(event, options.onStatusCompactMouseDown),
+            style: { fg: palette.accent, flexShrink: 0 },
+          },
+          STATUS_COMPACT_GLYPH,
+        )
       : null,
     rightGroup?.badge
       ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, rightGroup.badge)
@@ -316,6 +347,7 @@ function activeStatusContextBadgeWidth({
 
 type StatusRightGroupParts = {
   badge: string | undefined;
+  compact: string | undefined;
   effort: string | undefined;
   model: string | undefined;
 };
@@ -325,6 +357,9 @@ function statusRightGroupParts(options: InputActiveStatusOptions): StatusRightGr
   const model = modelParts.model;
   return {
     badge: inputContextUsageBadge(options.contextUsage),
+    // Local patch (status-compact-button): the compact glyph only renders when
+    // a click handler is wired, so plain callers keep the old badge-only row.
+    compact: options.onStatusCompactMouseDown ? STATUS_COMPACT_GLYPH : undefined,
     effort: (options.thoughtLevel ?? "").trim() || undefined,
     model:
       model && model !== UNKNOWN_MODEL_FIELD && model.toLowerCase() !== "unknown"
@@ -350,28 +385,42 @@ function fitStatusRightGroup(
     remaining -= displayWidth(badge);
   }
 
+  let compact = parts.compact;
+  if (compact && STATUS_COMPACT_GLYPH_WIDTH > remaining) compact = undefined;
+  if (compact) remaining -= STATUS_COMPACT_GLYPH_WIDTH;
+
   if (parts.model || parts.effort) {
-    if (badge) remaining -= gapWidth;
-    if (remaining < STATUS_MIN_CONTEXT_WIDTH) return { badge };
+    if (badge || compact) remaining -= gapWidth;
+    if (remaining < STATUS_MIN_CONTEXT_WIDTH) {
+      return { badge, compact };
+    }
 
     const modelWidth = parts.model ? displayWidth(parts.model) : 0;
     const effortWidth = parts.effort ? displayWidth(parts.effort) : 0;
     const separatorCount = parts.model && parts.effort ? 1 : 0;
     if (modelWidth + separatorCount * separatorWidth + effortWidth <= remaining) {
-      return { badge, model: parts.model, effort: parts.effort };
+      return { badge, compact, model: parts.model, effort: parts.effort };
     }
 
     // Narrow terminal: drop the effort segment first, then truncate the model.
     if (parts.model) {
       const model = truncateDisplay(parts.model, remaining);
-      return { badge, model: displayWidth(model) > 0 ? model : undefined };
+      return {
+        badge,
+        compact,
+        model: displayWidth(model) > 0 ? model : undefined,
+      };
     }
     if (parts.effort) {
       const effort = truncateDisplay(parts.effort, remaining);
-      return { badge, effort: displayWidth(effort) > 0 ? effort : undefined };
+      return {
+        badge,
+        compact,
+        effort: displayWidth(effort) > 0 ? effort : undefined,
+      };
     }
   }
-  return { badge };
+  return { badge, compact };
 }
 
 function fitComposerStatusParts(
