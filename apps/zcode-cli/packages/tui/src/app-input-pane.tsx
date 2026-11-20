@@ -33,7 +33,12 @@ export const INPUT_PANE_STATUS_SPACER_STYLE = {
 
 export const PROMPT_TEXTAREA_KEY_BINDINGS = [
   { name: "return", action: "submit" },
-  { name: "linefeed", action: "submit" },
+  // Ctrl+J (linefeed) inserts a newline; IDEA's terminal sends plain Esc+CR
+  // for Shift+Enter with "Send Esc+CR on Shift+Enter" enabled, which OpenTUI
+  // parses as return+meta.
+  { name: "linefeed", action: "newline" },
+  { name: "j", ctrl: true, action: "newline" },
+  { name: "return", meta: true, action: "newline" },
   { name: "return", shift: true, action: "newline" },
   { name: "linefeed", shift: true, action: "newline" },
 ] as const;
