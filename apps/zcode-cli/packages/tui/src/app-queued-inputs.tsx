@@ -105,6 +105,13 @@ function queuedInputPanelHeight(inputCount: number): number {
   );
 }
 
+// queued-input-collapse: queued rows have a fixed height of one line, so a
+// multi-line queued message would wrap and paint over the rows below.
+// Collapse every line break into a separator before width truncation.
+function collapseQueuedInputText(text: string): string {
+  return text.replace(/\r\n|\r|\n/g, " / ");
+}
+
 function QueuedInputRow({
   contentWidth,
   input,
@@ -115,6 +122,7 @@ function QueuedInputRow({
   position: number;
 }): React.ReactElement {
   const indexLabel = `${position}.`;
+  const collapsedText = collapseQueuedInputText(input.text);
   const textWidth = Math.max(
     QUEUED_INPUT_MIN_CONTENT_WIDTH,
     contentWidth - QUEUED_INPUT_INDEX_WIDTH,
@@ -148,10 +156,10 @@ function QueuedInputRow({
           fg: palette.text,
           flexShrink: 1,
           minWidth: 1,
-          width: displayWidth(truncateDisplay(input.text, textWidth)),
+          width: displayWidth(truncateDisplay(collapsedText, textWidth)),
         },
       },
-      truncateDisplay(input.text, textWidth),
+      truncateDisplay(collapsedText, textWidth),
     ),
   );
 }
