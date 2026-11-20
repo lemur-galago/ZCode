@@ -182,7 +182,10 @@ export function inputContextUsageBadge(contextUsage?: ContextUsage): string | un
   const window = contextUsage?.contextWindow;
   if (!validContextWindow(window)) return usedLabel;
 
-  return `${usedLabel} (${formatComposerPercent(used / window)})`;
+  // Local patch (context-window-badge): show the resolved context window size
+  // alongside usage, matching the desktop context meter ("used / total"); the
+  // window value comes from the CDN-refreshed zcode-builtin model rules.
+  return `${usedLabel} / ${formatCompactTokenCount(window)} (${formatComposerPercent(used / window)})`;
 }
 
 function composerStatusMetadataWidth(contentWidth?: number): number {
