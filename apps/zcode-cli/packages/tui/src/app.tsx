@@ -439,6 +439,7 @@ export function TuiApp({
     filteredModeOptions: modeCommand.filteredOptions,
     filteredModelOptions: modelCommand.filteredOptions,
     handleFileMentionKey: fileMentions.handleKey,
+    inputEditorRef,
     onExit,
     pasteClipboardImage,
     recallNextInput,

@@ -27,6 +27,13 @@ export function detectMarkdownRenderMode(
   return "plain";
 }
 
+// terminal-glyph-substitution: U+2116 (numero sign) is an ambiguous-width
+// glyph that JetBrains Mono / the IDEA terminal renders as a broken symbol;
+// display the familiar "#" instead. Applies to every transcript message.
+export function substituteUnsupportedGlyphs(value: string): string {
+  return value.replace(/\u2116/g, "#");
+}
+
 export function MarkdownText({
   content,
   foregroundColor,
@@ -38,24 +45,25 @@ export function MarkdownText({
   if (!content) {
     return h("text", { style: { fg: textColor } }, "");
   }
+  const safeContent = substituteUnsupportedGlyphs(content);
 
   const syntaxStyle = createMarkdownSyntaxStyle(theme);
   if (mode === "markdown") {
     if (syntaxStyle) {
       return h("markdown", {
         conceal: true,
-        content,
+        content: safeContent,
         streaming,
         syntaxStyle,
       });
     }
-    return h("text", { style: { fg: textColor } }, content);
+    return h("text", { style: { fg: textColor } }, safeContent);
   }
 
   if (mode === "code" && syntaxStyle) {
     return h("code", {
       conceal: true,
-      content,
+      content: safeContent,
       drawUnstyledText: false,
       fg: textColor,
       filetype: "markdown",
@@ -64,5 +72,5 @@ export function MarkdownText({
     });
   }
 
-  return h("text", { style: { fg: textColor } }, content);
+  return h("text", { style: { fg: textColor } }, safeContent);
 }

@@ -4,7 +4,7 @@ import type { Message } from "./app-model.js";
 import { palette } from "./app-model.js";
 import { EmptyTranscriptLogo } from "./app-empty-transcript.js";
 import { DEFAULT_TUI_COPY } from "./app-locale.js";
-import { MarkdownText } from "./app-markdown.js";
+import { MarkdownText, substituteUnsupportedGlyphs } from "./app-markdown.js";
 import { ThoughtTranscriptPartView } from "./app-thought-components.js";
 import { ToolTranscriptPartView } from "./app-tool-components.js";
 import { WorkflowRunCardView } from "./app-workflow-card.js";
@@ -141,7 +141,13 @@ export function MessageRow({
           }),
         ]
       : parts.length === 0
-        ? [h("text", { key: "content", style: { fg: plainTextColor } }, message.content)]
+        ? [
+            h(
+              "text",
+              { key: "content", style: { fg: plainTextColor } },
+              substituteUnsupportedGlyphs(message.content),
+            ),
+          ]
         : []),
     ...parts.map((part, partIndex) => {
       if (part.type === "tool") {
@@ -179,7 +185,11 @@ export function MessageRow({
             key: `text-${partIndex}`,
             streaming: message.streaming,
           })
-        : h("text", { key: `text-${partIndex}`, style: { fg: plainTextColor } }, part.text);
+        : h(
+            "text",
+            { key: `text-${partIndex}`, style: { fg: plainTextColor } },
+            substituteUnsupportedGlyphs(part.text),
+          );
     }),
   );
 }

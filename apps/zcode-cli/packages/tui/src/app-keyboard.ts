@@ -5,6 +5,7 @@ import { useCallback, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { handleApprovalKey } from "./app-approval.js";
 import { handleSelectionKey } from "./app-input.js";
+import type { PromptInputEditor } from "./app-input-pane.js";
 import {
   handleSelectionPaste,
   isSelectionPasteShortcut,
@@ -71,6 +72,7 @@ type UseTuiKeyboardControlsOptions = {
   filteredModelOptions: readonly TuiModelOption[];
   filteredSlashCommands: readonly SlashCommand[];
   handleFileMentionKey: (key: KeyEvent) => boolean;
+  inputEditorRef?: MutableRefObject<PromptInputEditor | null>;
   inputHistoryActive: boolean;
   messages: readonly Message[];
   effortSelection: EffortCommandSelectionState | undefined;
@@ -110,6 +112,7 @@ export function useTuiKeyboardControls({
   filteredModelOptions,
   filteredSlashCommands,
   handleFileMentionKey,
+  inputEditorRef,
   inputHistoryActive,
   messages,
   effortSelection,
@@ -227,6 +230,26 @@ export function useTuiKeyboardControls({
             else scrollBox.scrollTop = scrollBox.scrollHeight;
             return;
           }
+        }
+
+        // numero-input-substitution: Shift+3 in the Russian layout types
+        // U+2116 (numero sign), which this terminal renders as a broken
+        // glyph; type the familiar "#" into the composer instead.
+        if (key.sequence === "\u2116" || key.raw === "\u2116") {
+          const editor = inputEditorRef?.current;
+          consumeKey(key);
+          if (editor) {
+            try {
+              editor.insertText("#");
+              setDraftValue(editor.plainText);
+              editor.focus();
+            } catch {
+              setDraftValue(draftValue + "#");
+            }
+          } else {
+            setDraftValue(draftValue + "#");
+          }
+          return;
         }
 
         if (
