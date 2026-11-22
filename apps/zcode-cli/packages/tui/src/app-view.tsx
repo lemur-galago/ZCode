@@ -80,6 +80,10 @@ export function AppView(props: {
   onStatusEffortClick?: () => void;
   // Local patch (status-compact-button): click handler for the compact glyph.
   onStatusCompactClick?: () => void;
+  // Local patch (adddir-command): click handlers for the composer folder
+  // badge — "➕" opens the native folder picker, the folder name lists the directories.
+  onStatusAddDirClick?: () => void;
+  onStatusDirClick?: () => void;
   modelOptions: readonly NonNullable<TuiOptions["modelOptions"]>[number][];
   modelSelection?: ModelCommandSelectionState;
   messages: Message[];
@@ -96,6 +100,9 @@ export function AppView(props: {
   statusDetails: string[];
   submitValue: (value: string) => void;
   thoughtLevel: string;
+  // Local patch (adddir-command): additional working directories shown as a
+  // count in the composer folder badge.
+  workingDirectories: readonly string[];
   todos: TodoItem[];
   toggleSidebarSection?: (section: SidebarSectionId) => boolean;
   traceId?: string;
@@ -147,6 +154,9 @@ export function AppView(props: {
         lastEvent: props.lastEvent,
         messageCount: transcriptMessages.length,
         mcpStatus,
+        // Local patch (adddir-command): workspace row add-directory trigger.
+        additionalDirectoryCount: props.workingDirectories.length,
+        onAddDirClick: readOnly ? undefined : props.onStatusAddDirClick,
         mode: props.mode,
         model: props.model,
         modifiedFiles: props.modifiedFiles,
@@ -230,6 +240,8 @@ export function AppView(props: {
               onStatusModelClick: readOnly ? undefined : props.onStatusModelClick,
               onStatusEffortClick: readOnly ? undefined : props.onStatusEffortClick,
               onStatusCompactClick: readOnly ? undefined : props.onStatusCompactClick,
+              onStatusAddDirClick: readOnly ? undefined : props.onStatusAddDirClick,
+              onStatusDirClick: readOnly ? undefined : props.onStatusDirClick,
               queuedInputs,
               selection: composerSelection,
               setDraftValue: readOnly ? () => {} : props.setDraftValue,
@@ -237,6 +249,8 @@ export function AppView(props: {
               slashSelection: props.slashSelection,
               submitValue: readOnly ? () => {} : props.submitValue,
               thoughtLevel: props.thoughtLevel,
+              workingDirectories: props.workingDirectories,
+              workingDirectory: props.options.workspaceDirectory,
             }),
     ),
   );
@@ -268,6 +282,12 @@ export function ComposerInputArea(props: {
   // Local patch (status-compact-button): click handler for the compact glyph
   // rendered right before the context badge.
   onStatusCompactClick?: () => void;
+  // Local patch (adddir-command): click handlers for the composer folder
+  // badge — "➕" opens the native folder picker, the folder name lists the directories.
+  onStatusAddDirClick?: () => void;
+  onStatusDirClick?: () => void;
+  workingDirectories?: readonly string[];
+  workingDirectory?: string;
   queuedInputs: QueuedInput[];
   selection?: SelectionState;
   setDraftValue: (value: string) => void;
@@ -341,9 +361,16 @@ export function ComposerInputArea(props: {
       model: props.model,
       onInput: props.setDraftValue,
       onSubmit: props.submitValue,
+      // Local patch (adddir-command): composer folder badge data + handlers.
+      onStatusAddDirMouseDown: props.onStatusAddDirClick
+        ? () => props.onStatusAddDirClick?.()
+        : undefined,
+      onStatusDirMouseDown: props.onStatusDirClick ? () => props.onStatusDirClick?.() : undefined,
       resetCursorToEndVersion: props.inputCursorToEndVersion,
       thoughtLevel: props.thoughtLevel,
       value: props.draft,
+      workingDirectories: props.workingDirectories,
+      workingDirectory: props.workingDirectory,
     }),
     h(InputActiveStatus, {
       active: props.busy,

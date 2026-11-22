@@ -4,6 +4,7 @@ import {
   listCustomCommandsForHelp,
 } from "../command-center-custom.js";
 import { formatNewSessionResult, formatResumeResult } from "./formatters.js";
+import { handleAddDirCommand } from "./handlers/adddir.js";
 import { handleCustomCommand } from "./handlers/custom.js";
 import { handleDwfCommand } from "./handlers/dwf.js";
 import { handleEffortCommand } from "./handlers/effort.js";
@@ -204,6 +205,12 @@ export function createCommandCenter(deps: CommandCenterDeps): TuiSubmitPrompt {
         const app = await deps.getApp();
         const prompt = command.args ? `/compact ${command.args}` : "/compact";
         return attachCurrentSessionMetadata(await app.submitPrompt(prompt, options), deps, app);
+      }
+
+      // Local patch (adddir-command): handled entirely in the command center —
+      // no model turn, the wired dep updates the live runtime config.
+      if (command.name === "adddir") {
+        return handleAddDirCommand(command.args, deps);
       }
 
       if (command.name === "init") {

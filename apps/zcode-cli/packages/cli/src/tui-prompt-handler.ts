@@ -1,4 +1,6 @@
 import type { ToolSearchMode } from "@zcode/contracts";
+import { stat, type Stats } from "node:fs/promises";
+import { isAbsolute, resolve } from "node:path";
 import { getDefaultConfigPath, updateUiLocaleInFileConfig } from "@zcode/adapters/config";
 import type { SessionEvent } from "@zcode/contracts";
 import type { ZCodeAppOptions } from "@zcode/bootstrap";
@@ -69,6 +71,11 @@ export function createTuiSubmitPrompt(
   let activeUiLocale = uiLocale;
   // 进程级句柄（telemetry / Provider Registry / endpoint 路由）跨 App 替换复用，见 runtime 文件。
   const processRuntime = createTuiProcessRuntimeState();
+  // Local patch (adddir-command): process-level additional working directories.
+  // /adddir appends here and live-updates the current runtime config; every
+  // later app (/new, /resume, fork) is created with the same list.
+  let addedWorkingDirectories: string[] = [];
+  let sessionWorkingDirectory: string | undefined;
   let closeHandlerPromise: Promise<void> | undefined;
   const closePromises = new WeakMap<object, Promise<void>>();
   const browserRuntimes = new WeakMap<
@@ -156,6 +163,9 @@ export function createTuiSubmitPrompt(
       createdApp = await createAppFactory({
         modelSelectionMode: "cli-default",
         standaloneSessionControl: true,
+        // Local patch (adddir-command): keep /adddir directories across /new,
+        // /resume and fork app replacements in this process.
+        additionalDirectories: addedWorkingDirectories,
         browserControlPort: browserRuntime?.browserControlPort,
         env: appEnv,
         projectConfigPath: deps.projectConfigPath,
@@ -192,6 +202,9 @@ export function createTuiSubmitPrompt(
       throw error;
     }
     if (browserRuntime) browserRuntimes.set(createdApp as object, browserRuntime);
+    // Local patch (adddir-command): track the session cwd for /adddir path
+    // resolution and the metadata listing.
+    sessionWorkingDirectory = workingDirectory;
     // 初始化在等待旧身份导入时 TUI 可能已关闭；迟到 App 不能重新成为当前会话。
     if (closeHandlerPromise) {
       await closeApp(createdApp);
@@ -251,6 +264,39 @@ export function createTuiSubmitPrompt(
   };
 
   const commandCenter = createCommandCenter({
+    // Local patch (adddir-command): resolve + validate the path here (this
+    // closure owns the session cwd and the process-level list), then swap the
+    // live runtime config so the core announces the addition on the next turn.
+    addWorkingDirectory: async ({ path }) => {
+      const raw = path.trim().replace(/^"([\s\S]*)"$/u, "$1").replace(/^'([\s\S]*)'$/u, "$1");
+      if (raw.length === 0) {
+        return { outcome: "error", message: "Usage: /adddir <directory>" };
+      }
+      const base = sessionWorkingDirectory ?? process.cwd();
+      const resolved = isAbsolute(raw) ? resolve(raw) : resolve(base, raw);
+      if (addedWorkingDirectories.includes(resolved)) {
+        return {
+          outcome: "duplicate",
+          path: resolved,
+          directories: [...addedWorkingDirectories],
+        };
+      }
+      let directoryStats: Stats;
+      try {
+        directoryStats = await stat(resolved);
+      } catch {
+        return { outcome: "error", message: `Directory not found: ${resolved}` };
+      }
+      if (!directoryStats.isDirectory()) {
+        return { outcome: "error", message: `Not a directory: ${resolved}` };
+      }
+      addedWorkingDirectories = [...addedWorkingDirectories, resolved];
+      const runtime = (app as ModeCapableApp | undefined)?.runtime;
+      runtime?.updateConfig({ additionalDirectories: [...addedWorkingDirectories] });
+      return { outcome: "added", path: resolved, directories: [...addedWorkingDirectories] };
+    },
+    listWorkingDirectories: () => [...addedWorkingDirectories],
+    getWorkingDirectoryBase: () => sessionWorkingDirectory,
     forkApp: async (targetCheckpointId) => {
       const activeApp = await getApp();
       const result = await activeApp.forkFromCheckpoint?.({ targetCheckpointId });
@@ -319,7 +365,17 @@ export function createTuiSubmitPrompt(
 
   const submitPrompt: TuiPromptHandler = async (input, options) => {
     const result = await commandCenter(input, options);
-    return app ? { ...result, ...(await readTuiSessionMetadata(await getApp())) } : result;
+    return app
+      ? {
+          ...result,
+          // Local patch (adddir-command): every result carries the live
+          // additional-directory list so the composer folder badge stays in
+          // sync (including after /adddir itself).
+          ...(await readTuiSessionMetadata(await getApp(), {
+            additionalWorkingDirectories: () => [...addedWorkingDirectories],
+          })),
+        }
+      : result;
   };
 
   submitPrompt.setMode = async (nextMode) => ({ mode: await setCliMode(nextMode) });
@@ -335,8 +391,13 @@ export function createTuiSubmitPrompt(
 
   submitPrompt.sendInput = async (input, options) => {
     // Model/effort changes configure subsequent requests, including during an active turn.
+    // Local patch (adddir-command): /adddir is the same kind of local config
+    // command — apply it immediately instead of queueing the text.
     const command = parseSlashCommand(typeof input === "string" ? input : input.text);
-    if (command?.type === "known" && (command.name === "model" || command.name === "effort")) {
+    if (
+      command?.type === "known" &&
+      (command.name === "model" || command.name === "effort" || command.name === "adddir")
+    ) {
       return {
         kind: "command_result",
         result: await submitPrompt(input, {
@@ -359,7 +420,9 @@ export function createTuiSubmitPrompt(
     );
   };
 
-  attachTuiAppQueries(submitPrompt, getApp);
+  attachTuiAppQueries(submitPrompt, getApp, {
+    additionalWorkingDirectories: () => [...addedWorkingDirectories],
+  });
 
   submitPrompt.subscribeSessionEvents = (sink: (event: SessionEvent) => void) => {
     const unsubscribe = sessionEventRelay.addSink(sink);

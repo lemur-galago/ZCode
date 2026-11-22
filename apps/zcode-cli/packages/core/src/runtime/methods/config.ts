@@ -50,7 +50,10 @@ export async function setExecutionState(
 
 export function updateConfig(
   this: AgentRuntimeInternal,
-  patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle">,
+  patch: Pick<
+    AgentRuntimeConfig,
+    "mode" | "planEnabled" | "language" | "outputStyle" | "additionalDirectories"
+  >,
 ): void {
   if (patch.mode !== undefined || patch.planEnabled !== undefined) {
     const previous = resolveExecutionState(this.config);
@@ -58,6 +61,13 @@ export function updateConfig(
     Object.assign(this.config, next);
     if (previous.planEnabled !== next.planEnabled)
       this.needsPlanModeExitReminder = !next.planEnabled;
+  }
+  // Local patch (adddir-command): /adddir swaps the live additional-directory
+  // list. No rebuild is needed — baselineCurrentEnvironment reads this field
+  // per turn and buildEnvironmentAnnouncement emits an "added directories"
+  // update when the set changes.
+  if (patch.additionalDirectories !== undefined) {
+    this.config.additionalDirectories = patch.additionalDirectories;
   }
   if (patch.language !== undefined) {
     this.config.language = patch.language;

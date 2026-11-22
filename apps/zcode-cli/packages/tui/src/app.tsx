@@ -17,6 +17,12 @@ import { useEffortCommandController } from "./app-effort-command.js";
 import { useInputHistory } from "./app-input-history.js";
 import { useModeCommandController } from "./app-mode-command.js";
 import { useModelCommandController } from "./app-model-command.js";
+import {
+  createDirectoryPickerGate,
+  isDirectoryPickerSupported,
+  pickWindowsDirectory,
+  type DirectoryPickerGate,
+} from "./app-directory-picker.js";
 import { useSidebarController } from "./app-sidebar-layout.js";
 import { createSelectionState } from "./app-selection-state.js";
 import { resolveComposerSubmittedText } from "./app-submit-resolver.js";
@@ -70,6 +76,11 @@ export function TuiApp({
   const [model, setModel] = useState(initialResult?.model ?? options.initialModel ?? "unknown");
   const [thoughtLevel, setThoughtLevel] = useState(
     initialResult?.thoughtLevel ?? options.initialThoughtLevel ?? "",
+  );
+  // Local patch (adddir-command): additional working directories live in the
+  // prompt handler; results and startup options carry the current list.
+  const [workingDirectories, setWorkingDirectories] = useState<readonly string[]>(
+    () => initialResult?.workingDirectories ?? options.initialWorkingDirectories ?? [],
   );
   const [locale, setLocale] = useState(initialLocale);
   const [lastEvent, setLastEvent] = useState("idle");
@@ -216,6 +227,7 @@ export function TuiApp({
     setTodos,
     setTraceId,
     setUsage,
+    setWorkingDirectories,
     workspaceDirectory: options.workspaceDirectory,
   });
 
@@ -427,6 +439,46 @@ export function TuiApp({
     void submitValue("/compact");
   }, [approvalQueue.length, submitValue, subagents.selected]);
 
+  // Local patch (adddir-command): clicking the ➕ glyph next to the composer
+  // folder badge opens the native folder picker (Windows FolderBrowserDialog
+  // via powershell -STA); the chosen path is submitted as `/adddir "<path>"`
+  // automatically. Platforms without the picker fall back to prefilling
+  // "/adddir " so the path can be typed. Clicking the folder name itself
+  // lists the current additional directories.
+  const directoryPickerGateRef = useRef<DirectoryPickerGate | undefined>(undefined);
+  directoryPickerGateRef.current ??= createDirectoryPickerGate();
+
+  const openStatusDirPicker = useCallback(() => {
+    if (subagents.selected || approvalQueue[0]) return;
+    if (!isDirectoryPickerSupported()) {
+      setDraftValue("/adddir ");
+      setInputCursorToEndVersion((version) => version + 1);
+      inputEditorRef.current?.focus();
+      setStatus("Type a directory path after /adddir and press Enter.");
+      return;
+    }
+    void directoryPickerGateRef.current?.run(async () => {
+      setStatus("Waiting for folder selection...");
+      let picked: string | undefined;
+      try {
+        picked = await pickWindowsDirectory();
+      } catch {
+        picked = undefined;
+      }
+      if (picked) {
+        await submitValue(`/adddir "${picked}"`);
+        return;
+      }
+      setStatus("Folder selection cancelled.");
+      inputEditorRef.current?.focus();
+    });
+  }, [approvalQueue.length, setDraftValue, setStatus, submitValue, subagents.selected]);
+
+  const submitStatusDirList = useCallback(() => {
+    if (subagents.selected || approvalQueue[0]) return;
+    void submitValue("/adddir");
+  }, [approvalQueue.length, submitValue, subagents.selected]);
+
   useTuiKeyboardControls({
     readOnlyView: subagents.selected ? { back: subagents.back } : undefined,
     abortControllerRef,
@@ -505,12 +557,15 @@ export function TuiApp({
     onStatusModelClick: cycleStatusModel,
     onStatusEffortClick: cycleStatusEffort,
     onStatusCompactClick: submitStatusCompact,
+    onStatusAddDirClick: openStatusDirPicker,
+    onStatusDirClick: submitStatusDirList,
     slashCommands: filteredSlashCommands,
     slashSelection,
     status,
     statusDetails,
     submitValue,
     thoughtLevel,
+    workingDirectories,
     todos,
     toggleSidebarSection: sidebar.toggleSidebarSection,
     traceId,

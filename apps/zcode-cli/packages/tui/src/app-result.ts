@@ -41,6 +41,9 @@ type TuiApplyResultInput = {
   setSelection: React.Dispatch<React.SetStateAction<SelectionState | undefined>>;
   setStatus: (status: string) => void;
   setThoughtLevel: (thoughtLevel: string) => void;
+  // Local patch (adddir-command): live additional working directories for the
+  // composer folder badge.
+  setWorkingDirectories: React.Dispatch<React.SetStateAction<readonly string[]>>;
   setTodos: React.Dispatch<React.SetStateAction<TodoItem[]>>;
   setTraceId: (traceId: string | undefined) => void;
   setUsage: React.Dispatch<React.SetStateAction<ModelUsageSummary | undefined>>;
@@ -58,6 +61,9 @@ export function useTuiApplyResult(input: TuiApplyResultInput) {
       if (result.effortOptions) input.setEffortOptions(result.effortOptions);
       if (result.modelOptions) input.setModelOptions(result.modelOptions);
       if ("thoughtLevel" in result) input.setThoughtLevel(result.thoughtLevel ?? "");
+      // Local patch (adddir-command): metadata always carries the live list,
+      // so /adddir, /new and /resume all refresh the folder badge.
+      if (result.workingDirectories) input.setWorkingDirectories(result.workingDirectories);
       input.setMessages((current) =>
         appendAgentResult(current, result, { workspaceDirectory: input.workspaceDirectory }),
       );

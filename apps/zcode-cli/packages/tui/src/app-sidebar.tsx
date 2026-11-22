@@ -46,6 +46,10 @@ type SidebarProps = SidebarState & {
   onToggleSection?: (section: SidebarSectionId) => void;
   sectionExpansion?: SidebarSectionExpansion;
   version?: string;
+  // Local patch (adddir-command): click handler + count for the workspace row
+  // add-directory trigger ("➕" pinned to the row's right edge).
+  onAddDirClick?: () => void;
+  additionalDirectoryCount?: number;
 };
 
 export function Sidebar(props: SidebarProps): React.ReactElement {
@@ -113,13 +117,76 @@ export function Sidebar(props: SidebarProps): React.ReactElement {
           }),
         ]
       : []),
-    h("box", { style: { flexGrow: 1 } }),
+    h("box", { key: "sidebar-spacer", style: { flexGrow: 1 } }),
+    // Local patch (adddir-command): the always-visible workspace footer gets a
+    // clickable "➕" pinned to its right edge (opens the folder picker, same as the
+    // composer-status badge) and shows the additional-directory count.
+    props.onAddDirClick
+      ? workspaceFooterWithAddDir(props)
+      : h(
+          "text",
+          { key: "workspace-footer", style: { ...SIDEBAR_TEXT_ROW_STYLE, fg: palette.muted } },
+          workspaceFooterLabel(props),
+        ),
+  );
+}
+
+function workspaceFooterWithAddDir(props: SidebarProps): React.ReactElement {
+  const count = props.additionalDirectoryCount ?? 0;
+  const countText = count > 0 ? `(+${count}) ` : "";
+  const labelBudget = Math.max(
+    1,
+    SIDEBAR_CONTENT_WIDTH - SIDEBAR_ADD_DIR_GLYPH_WIDTH - displayWidth(countText),
+  );
+  return h(
+    "box",
+    {
+      key: "workspace-footer",
+      style: { flexDirection: "row", flexShrink: 0, height: 1, width: SIDEBAR_CONTENT_WIDTH },
+    },
     h(
       "text",
-      { style: { ...SIDEBAR_TEXT_ROW_STYLE, fg: palette.muted } },
-      workspaceFooterLabel(props),
+      {
+        key: "workspace-footer-label",
+        style: { ...SIDEBAR_TEXT_ROW_STYLE, fg: palette.muted },
+      },
+      truncateDisplay(workspaceFooterValue(props), labelBudget),
+    ),
+    h("box", { key: "workspace-footer-spacer", style: { flexGrow: 1, minHeight: 0 } }),
+    countText
+      ? h(
+          "text",
+          {
+            key: "workspace-footer-count",
+            style: { ...SIDEBAR_TEXT_ROW_STYLE, fg: palette.accent },
+          },
+          countText,
+        )
+      : null,
+    h(
+      "text",
+      {
+        key: "workspace-footer-add",
+        onMouseDown: (event: { preventDefault: () => void; stopPropagation: () => void }) => {
+          event.preventDefault();
+          event.stopPropagation();
+          props.onAddDirClick?.();
+        },
+        style: {
+          ...SIDEBAR_TEXT_ROW_STYLE,
+          fg: palette.accent,
+          width: SIDEBAR_ADD_DIR_GLYPH_WIDTH,
+        },
+      },
+      SIDEBAR_ADD_DIR_GLYPH,
     ),
   );
+}
+
+function workspaceFooterValue(props: SidebarProps): string {
+  const workspace = props.workspaceDirectory ?? "-";
+  const branch = props.workspaceGitBranch;
+  return branch ? `${workspace}:${branch}` : workspace;
 }
 
 function productVersionHeader(version: string | undefined): React.ReactElement {
@@ -226,7 +293,13 @@ function runLines(props: SidebarProps): React.ReactNode[] {
     rowLine(copy.sidebar.run.provider, modelParts.provider, "provider"),
     rowLine(copy.sidebar.run.model, modelParts.model, "model"),
     rowLine(copy.sidebar.run.thought, props.thoughtLevel, "thought"),
-    rowLine(copy.sidebar.run.workspace, props.workspaceDirectory ?? "-", "workspace"),
+    // Local patch (adddir-command): the workspace row grows a clickable "➕"
+    // pinned to its right edge (opens the folder picker, same as the
+    // composer-status badge) and shows the additional-directory count. Emoji
+    // glyph: 2 terminal cells (displayWidth undercounts astral emoji).
+    props.onAddDirClick
+      ? workspaceRowWithAddDir(props)
+      : rowLine(copy.sidebar.run.workspace, props.workspaceDirectory ?? "-", "workspace"),
     rowLine(copy.sidebar.run.turn, props.activeTurnId ?? "-", "turn"),
     rowLine(copy.sidebar.run.trace, props.traceId ?? "-", "trace"),
     rowLine(copy.sidebar.run.messages, String(props.messageCount), "messages"),
@@ -236,6 +309,62 @@ function runLines(props: SidebarProps): React.ReactNode[] {
       "draft",
     ),
   ];
+}
+
+const SIDEBAR_ADD_DIR_GLYPH = "➕";
+const SIDEBAR_ADD_DIR_GLYPH_WIDTH = 2;
+
+function workspaceRowWithAddDir(props: SidebarProps): React.ReactElement {
+  const copy = props.copy ?? DEFAULT_TUI_COPY;
+  const count = props.additionalDirectoryCount ?? 0;
+  const countText = count > 0 ? `(+${count}) ` : "";
+  const valueBudget = Math.max(
+    1,
+    SIDEBAR_ROW_VALUE_WIDTH - SIDEBAR_ADD_DIR_GLYPH_WIDTH - displayWidth(countText),
+  );
+  return h(
+    "box",
+    { key: "workspace", style: { flexDirection: "row", flexShrink: 0, height: 1 } },
+    h(
+      "text",
+      {
+        key: "workspace-value",
+        style: { ...SIDEBAR_TEXT_ROW_STYLE, fg: palette.text },
+      },
+      `${padEndDisplay(copy.sidebar.run.workspace, SIDEBAR_LABEL_WIDTH)} ${truncateDisplay(
+        props.workspaceDirectory ?? "-",
+        valueBudget,
+      )}`,
+    ),
+    h("box", { key: "workspace-spacer", style: { flexGrow: 1, minHeight: 0 } }),
+    countText
+      ? h(
+          "text",
+          {
+            key: "workspace-count",
+            style: { ...SIDEBAR_TEXT_ROW_STYLE, fg: palette.accent },
+          },
+          countText,
+        )
+      : null,
+    h(
+      "text",
+      {
+        key: "workspace-add",
+        onMouseDown: (event: { preventDefault: () => void; stopPropagation: () => void }) => {
+          event.preventDefault();
+          event.stopPropagation();
+          props.onAddDirClick?.();
+        },
+        style: {
+          ...SIDEBAR_TEXT_ROW_STYLE,
+          fg: palette.accent,
+          width: SIDEBAR_ADD_DIR_GLYPH_WIDTH,
+        },
+      },
+      SIDEBAR_ADD_DIR_GLYPH,
+    ),
+  );
 }
 
 function contextLines(props: SidebarProps): React.ReactNode[] {
@@ -362,10 +491,7 @@ function cacheReadWriteLabel(
 }
 
 function workspaceFooterLabel(props: SidebarProps): string {
-  const workspace = props.workspaceDirectory ?? "-";
-  const branch = props.workspaceGitBranch;
-  const value = branch ? `${workspace}:${branch}` : workspace;
-  return truncateDisplay(value, SIDEBAR_CONTENT_WIDTH);
+  return truncateDisplay(workspaceFooterValue(props), SIDEBAR_CONTENT_WIDTH);
 }
 
 function formatOptionalNumber(value: number | undefined): string {

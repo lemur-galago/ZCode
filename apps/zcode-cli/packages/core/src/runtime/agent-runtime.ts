@@ -520,7 +520,10 @@ export interface AgentRuntime {
   closeBrowserSession(): Promise<void>;
   closeOwnedWork(): Promise<void>;
   updateConfig(
-    patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle">,
+    patch: Pick<
+      AgentRuntimeConfig,
+      "mode" | "planEnabled" | "language" | "outputStyle" | "additionalDirectories"
+    >,
   ): void;
   initializeSessionShellEnvironmentIfNeeded(
     selection: ExecutionShellSelection | (() => ExecutionShellSelection),

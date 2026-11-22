@@ -56,6 +56,17 @@ export function parseSlashCommand(input: string): SlashCommand | null {
     };
   }
 
+  // Local patch (adddir-command): local config command — appends a working
+  // directory to the live session instead of sending a model prompt.
+  if (rawName === "adddir") {
+    return {
+      args,
+      name: "adddir",
+      rawName,
+      type: "known",
+    };
+  }
+
   if (rawName === "expert") {
     return {
       args,

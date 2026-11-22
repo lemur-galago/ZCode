@@ -22,7 +22,14 @@ export type TuiContextUsage = Pick<SessionProjection, "contextUsed" | "contextWi
 
 export type TuiSessionMetadata = Pick<
   TuiSubmitPromptResult,
-  "locale" | "model" | "theme" | "thoughtLevel" | "modelOptions" | "effortOptions" | "loginRequired"
+  | "locale"
+  | "model"
+  | "theme"
+  | "thoughtLevel"
+  | "modelOptions"
+  | "effortOptions"
+  | "loginRequired"
+  | "workingDirectories"
 >;
 
 export type TuiSwitchableMode = Extract<
@@ -157,6 +164,9 @@ export type TuiSubmitPromptResult = {
   mode?: CollaborationMode;
   model?: string;
   theme?: UiThemePreference;
+  // Local patch (adddir-command): live additional working directories; kept
+  // in sync by the prompt handler metadata on every result.
+  workingDirectories?: readonly string[];
   projection?: Partial<TuiContextUsage>;
   response: string;
   resetSessionProjection?: boolean;
@@ -311,6 +321,9 @@ export type TuiOptions = {
   initialModel?: string;
   initialResult?: TuiSubmitPromptResult;
   initialThoughtLevel?: string;
+  // Local patch (adddir-command): additional working directories for this
+  // process; shown as a count next to the composer folder badge.
+  initialWorkingDirectories?: readonly string[];
   loginRequired?: boolean;
   locale?: SupportedLocale;
   theme?: UiThemePreference;
@@ -352,6 +365,7 @@ export type TuiStartupOptions = Pick<
   | "initialMode"
   | "initialModel"
   | "initialThoughtLevel"
+  | "initialWorkingDirectories"
   | "loginRequired"
   | "locale"
   | "theme"

@@ -68,9 +68,15 @@ export function InputPane({
   onInput,
   onSubmit,
   editorRef,
+  // Local patch (adddir-command): composer folder badge props, forwarded to
+  // the composer status row.
+  onStatusAddDirMouseDown,
+  onStatusDirMouseDown,
   resetCursorToEndVersion,
   thoughtLevel,
   value,
+  workingDirectories,
+  workingDirectory,
 }: {
   busy: boolean;
   contentWidth?: number;
@@ -81,9 +87,19 @@ export function InputPane({
   model: string;
   onInput: (value: string) => void;
   onSubmit: (value: string) => void;
+  onStatusAddDirMouseDown?: (event: {
+    preventDefault: () => void;
+    stopPropagation: () => void;
+  }) => void;
+  onStatusDirMouseDown?: (event: {
+    preventDefault: () => void;
+    stopPropagation: () => void;
+  }) => void;
   resetCursorToEndVersion: number;
   thoughtLevel: string;
   value: string;
+  workingDirectories?: readonly string[];
+  workingDirectory?: string;
 }): React.ReactElement {
   const textareaRef = React.useRef<TextareaRenderable | null>(null);
   const appliedCursorToEndVersionRef = React.useRef(0);
@@ -166,6 +182,12 @@ export function InputPane({
       contentWidth: inputPaneStatusContentWidth(contentWidth),
       model,
       thoughtLevel,
+      // Local patch (adddir-command): folder badge ("+ name (+n)") at the
+      // start of the composer status row.
+      additionalDirectoryCount: workingDirectories?.length ?? 0,
+      onStatusAddDirMouseDown,
+      onStatusDirMouseDown,
+      workingDirectory,
     }),
   );
 }

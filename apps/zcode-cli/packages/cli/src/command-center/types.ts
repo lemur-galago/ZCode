@@ -301,6 +301,19 @@ export type CommandCenterApp = {
 export type CommandCenterDeps = {
   forkApp?: (targetCheckpointId?: string) => Promise<CommandCenterForkResult>;
   getApp(): Promise<CommandCenterApp>;
+  // Local patch (adddir-command): /adddir support. The prompt handler owns the
+  // process-level directory list (reapplied to apps from /new and /resume) and
+  // the live runtime config swap; path resolution and validation happen there
+  // so the command handler stays pure formatting.
+  addWorkingDirectory?: (input: {
+    path: string;
+  }) => Promise<
+    | { outcome: "added"; path: string; directories: string[] }
+    | { outcome: "duplicate"; path: string; directories: string[] }
+    | { outcome: "error"; message: string }
+  >;
+  listWorkingDirectories?: () => string[];
+  getWorkingDirectoryBase?: () => string | undefined;
   getLocale?: () => TuiSubmitPromptResult["locale"];
   getMode?: () => CommandCenterMode;
   hasSelectableModels?: () => Promise<boolean> | boolean;

@@ -5,7 +5,18 @@ import { listAppEffortOptions } from "./command-center/effort-options.js";
 import type { TuiPromptHandler } from "./tui-command-state.js";
 import type { TuiSessionMetadata } from "@zcode/tui";
 
-export async function readTuiSessionMetadata(app: CommandCenterApp): Promise<TuiSessionMetadata> {
+// Local patch (adddir-command): the process-level additional working
+// directories live in the prompt-handler closure; metadata readers receive
+// them through this getter so every result and getSessionMetadata() carries
+// the same live list.
+export type TuiWorkingDirectoriesState = {
+  additionalWorkingDirectories: () => string[];
+};
+
+export async function readTuiSessionMetadata(
+  app: CommandCenterApp,
+  workingDirectories?: TuiWorkingDirectoriesState,
+): Promise<TuiSessionMetadata> {
   const modelOptions = (await app.listModels?.()) ?? [];
   return {
     locale: app.getLocale?.(),
@@ -15,12 +26,14 @@ export async function readTuiSessionMetadata(app: CommandCenterApp): Promise<Tui
     modelOptions,
     effortOptions: (await listAppEffortOptions(app)) ?? [],
     loginRequired: !modelOptions.some((model) => !model.disabledReason),
+    workingDirectories: workingDirectories?.additionalWorkingDirectories() ?? [],
   };
 }
 
 export const attachTuiAppQueries = (
   submitPrompt: TuiPromptHandler,
   getApp: () => Promise<CommandCenterApp>,
+  workingDirectories?: TuiWorkingDirectoriesState,
 ): void => {
   submitPrompt.readSubagents = async (input) => {
     const app = await getApp();
@@ -45,7 +58,7 @@ export const attachTuiAppQueries = (
 
   submitPrompt.getSessionMetadata = async () => {
     const activeApp = await getApp();
-    return readTuiSessionMetadata(activeApp);
+    return readTuiSessionMetadata(activeApp, workingDirectories);
   };
 
   submitPrompt.listModelOptions = async () => {

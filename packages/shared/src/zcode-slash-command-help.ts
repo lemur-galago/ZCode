@@ -40,6 +40,19 @@ export const BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES: readonly BuiltinZCodeSlas
     usage: "/compact [instructions]",
   },
   {
+    // Local patch (adddir-command): CLI-only command; resolves the argument
+    // against the session cwd, requires an existing directory, and appends it
+    // to the live runtime config (announced to the model on the next turn).
+    details: [
+      "Adds the directory to this session's additional working directories and announces it to the agent on the next turn.",
+      "The path is resolved against the current working directory and must already exist.",
+      "Run without arguments to list the additional directories; the list applies for the rest of the CLI process.",
+    ],
+    name: "adddir",
+    summary: "Add a working directory for this session.",
+    usage: "/adddir <directory>",
+  },
+  {
     details: [
       "Runs a normal agent turn that inspects the current workspace and creates or updates AGENTS.md.",
       "Existing AGENTS.md files should be edited rather than overwritten.",

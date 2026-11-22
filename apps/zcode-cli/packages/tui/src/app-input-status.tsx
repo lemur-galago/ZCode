@@ -147,15 +147,29 @@ export function InputComposerStatus({
   contentWidth,
   model,
   thoughtLevel,
+  // Local patch (adddir-command): folder badge props — "+" prefills /adddir,
+  // the folder name lists the additional directories.
+  additionalDirectoryCount = 0,
+  onStatusAddDirMouseDown,
+  onStatusDirMouseDown,
+  workingDirectory,
 }: {
   contentWidth?: number;
   model: string;
   thoughtLevel: string;
+  additionalDirectoryCount?: number;
+  onStatusAddDirMouseDown?: StatusMouseHandler;
+  onStatusDirMouseDown?: StatusMouseHandler;
+  workingDirectory?: string;
 }): React.ReactElement {
   return inputComposerStatusRow({
+    additionalDirectoryCount,
     contentWidth,
     model,
     thoughtLevel,
+    onStatusAddDirMouseDown,
+    onStatusDirMouseDown,
+    workingDirectory,
   });
 }
 
@@ -256,15 +270,33 @@ export function inputComposerStatusRow({
   contentWidth,
   model,
   thoughtLevel,
+  additionalDirectoryCount = 0,
+  onStatusAddDirMouseDown,
+  onStatusDirMouseDown,
+  workingDirectory,
 }: {
   contentWidth?: number;
   model: string;
   thoughtLevel: string;
+  additionalDirectoryCount?: number;
+  onStatusAddDirMouseDown?: StatusMouseHandler;
+  onStatusDirMouseDown?: StatusMouseHandler;
+  workingDirectory?: string;
 }): React.ReactElement {
+  const metadataWidth = composerStatusMetadataWidth(contentWidth);
+  // Local patch (adddir-command): the folder badge leads the row ("+ name
+  // (+n)"); its width is subtracted from the model metadata budget so the
+  // existing fit logic keeps fitting the rest of the row.
+  const folder = fitComposerFolderBadge(
+    workingDirectoryBadgeLabel(workingDirectory),
+    additionalDirectoryCount,
+    metadataWidth,
+  );
+  const folderWidth = folder ? composerFolderBadgeWidth(folder) : 0;
   const parts = inputComposerStatusParts(
     model,
     thoughtLevel,
-    composerStatusMetadataWidth(contentWidth),
+    Math.max(1, metadataWidth - folderWidth),
   );
   return h(
     "box",
@@ -277,6 +309,34 @@ export function inputComposerStatusRow({
         width: "100%",
       },
     },
+    folder
+      ? h(
+          "box",
+          { style: { flexDirection: "row", flexShrink: 0 } },
+          h(
+            "text",
+            {
+              onMouseDown: (event: { preventDefault: () => void; stopPropagation: () => void }) =>
+                triggerStatusMouseHandler(event, onStatusAddDirMouseDown),
+              style: { fg: palette.accent, flexShrink: 0, width: COMPOSER_FOLDER_ADD_GLYPH_WIDTH },
+            },
+            COMPOSER_FOLDER_ADD_GLYPH,
+          ),
+          h(
+            "text",
+            {
+              onMouseDown: (event: { preventDefault: () => void; stopPropagation: () => void }) =>
+                triggerStatusMouseHandler(event, onStatusDirMouseDown),
+              style: { fg: palette.text, flexShrink: 0 },
+            },
+            folder.label,
+          ),
+          folder.count
+            ? h("text", { style: { fg: palette.accent, flexShrink: 0 } }, ` ${folder.count}`)
+            : null,
+          h("text", { style: { fg: palette.muted, flexShrink: 0 } }, "  "),
+        )
+      : null,
     h(
       "box",
       { style: { flexDirection: "row", flexShrink: 1, minWidth: 1 } },
@@ -285,6 +345,60 @@ export function inputComposerStatusRow({
       h("text", { style: { fg: palette.warning, flexShrink: 0 } }, parts.thought),
     ),
   );
+}
+
+// Local patch (adddir-command): folder badge helpers — the last path segment
+// of the working directory, with an additional-directory count when present.
+export function workingDirectoryBadgeLabel(
+  workingDirectory: string | undefined,
+): string | undefined {
+  const trimmed = (workingDirectory ?? "").trim();
+  if (!trimmed) return undefined;
+  const normalized = trimmed.replace(/[\\/]+$/u, "");
+  const segments = normalized.split(/[\\/]/u).filter((segment) => segment.length > 0);
+  const last = segments[segments.length - 1];
+  return last && last.length > 0 ? last : normalized;
+}
+
+type ComposerFolderBadgeParts = {
+  label: string;
+  count: string | undefined;
+};
+
+// Local patch (adddir-command, resized 2026-11-22 per «кнопку надо сделать
+// заметнее»): the add-directory trigger is an EMOJI glyph ("➕ " heavy plus),
+// same treatment as the compact button — it renders ~1.7x taller than text
+// glyphs and takes 2 terminal cells; displayWidth() undercounts astral emoji,
+// so the budget uses the explicit constant (2 cells + 1 trailing space).
+const COMPOSER_FOLDER_ADD_GLYPH = "➕ ";
+const COMPOSER_FOLDER_ADD_GLYPH_WIDTH = 3;
+const COMPOSER_FOLDER_BADGE_FIXED_WIDTH =
+  COMPOSER_FOLDER_ADD_GLYPH_WIDTH + 2; // glyph incl. hit-area space + trailing two-space gap
+
+function composerFolderBadgeWidth(parts: ComposerFolderBadgeParts): number {
+  return (
+    COMPOSER_FOLDER_BADGE_FIXED_WIDTH +
+    displayWidth(parts.label) +
+    (parts.count ? 1 + displayWidth(parts.count) : 0)
+  );
+}
+
+function fitComposerFolderBadge(
+  label: string | undefined,
+  additionalDirectoryCount: number,
+  maxWidth: number,
+): ComposerFolderBadgeParts | undefined {
+  if (!label) return undefined;
+  const count = additionalDirectoryCount > 0 ? `(+${additionalDirectoryCount})` : undefined;
+  const full: ComposerFolderBadgeParts = { label, count };
+  if (composerFolderBadgeWidth(full) <= maxWidth) return full;
+  if (count) {
+    const withoutCount: ComposerFolderBadgeParts = { label, count: undefined };
+    if (composerFolderBadgeWidth(withoutCount) <= maxWidth) return withoutCount;
+  }
+  const labelBudget = Math.max(1, maxWidth - COMPOSER_FOLDER_BADGE_FIXED_WIDTH);
+  const truncated = truncateDisplay(label, labelBudget);
+  return truncated.length > 0 ? { label: truncated, count: undefined } : undefined;
 }
 
 export function inputComposerStatusParts(

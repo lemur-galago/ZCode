@@ -80,6 +80,9 @@ export const runTuiCommand = async (
             theme: metadata.theme ?? "auto",
             modelOptions: metadata.modelOptions,
             effortOptions: metadata.effortOptions,
+            // Local patch (adddir-command): seed the composer folder badge with
+            // the process-level additional working directories.
+            initialWorkingDirectories: metadata.workingDirectories,
             slashCommands: listSlashCommandSuggestions(customCommands, { workflowMode }),
             workspaceGitBranch,
           };
