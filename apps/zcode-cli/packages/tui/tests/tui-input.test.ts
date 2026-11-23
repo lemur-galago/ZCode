@@ -33,10 +33,13 @@ import { modelDisplayParts } from "../src/app-model-ref.js";
 
 const TEST_STATUS_PROPS = { model: "default-deepseek/deepseek-v4-pro", thoughtLevel: "max" };
 
-test("prompt textarea binds Enter to submit and Shift+Enter to newline", () => {
+test("prompt textarea binds Enter to submit and Shift+Enter, Ctrl+J, Alt+Enter to newline", () => {
+  // Local patch (idea-esc-cr-and-ctrl-j): IDEA sends Esc+Enter for Shift+Enter.
   assert.deepEqual(PROMPT_TEXTAREA_KEY_BINDINGS, [
     { name: "return", action: "submit" },
-    { name: "linefeed", action: "submit" },
+    { name: "linefeed", action: "newline" },
+    { name: "j", ctrl: true, action: "newline" },
+    { name: "return", meta: true, action: "newline" },
     { name: "return", shift: true, action: "newline" },
     { name: "linefeed", shift: true, action: "newline" },
   ]);
@@ -129,14 +132,15 @@ test("formats and renders the active status context meter on the right", () => {
   });
   const nodes = collectTextNodes(row);
 
-  assert.equal(inputContextUsageBadge(contextUsage), "24.1K (2%)");
+  // Local patch (context-window-badge): the meter shows the context window too.
+  assert.equal(inputContextUsageBadge(contextUsage), "24.1K / 1M (2%)");
   assert.equal(inputContextUsageBadge({ contextUsed: 999 }), "999");
   assert.equal(
     inputContextUsageBadge({ contextUsed: 2_000_000, contextWindow: 10_000_000 }),
-    "2M (20%)",
+    "2M / 10M (20%)",
   );
   assert.equal(inputContextUsageBadge({ contextWindow: 1_000_000 }), undefined);
-  assert.equal(nodes.at(-1)?.text, "24.1K (2%)");
+  assert.equal(nodes.at(-1)?.text, "24.1K / 1M (2%)");
   assert.deepEqual(nodes.at(-1)?.style, {
     fg: palette.muted,
     flexShrink: 0,
@@ -170,12 +174,12 @@ test("renders the active status outside the composer status row while busy", () 
 
   assert.equal(
     activeNodes.map((node) => node.text).join(""),
-    `${frame} esc to interrupt11.1K (6%)`,
+    `${frame} esc to interrupt11.1K / 185K (6%)`,
   );
   assert.equal(composerText, "deepseek-v4-pro default-deepseek | max");
   assert.equal(
     collectTextNodes(InputActiveStatus({ active: false, contextUsage, copy })!).at(-1)?.text,
-    "11.1K (6%)",
+    "11.1K / 185K (6%)",
   );
   assert.deepEqual(activeNodes.find((node) => node.text === frame)?.style, {
     fg: palette.accent,

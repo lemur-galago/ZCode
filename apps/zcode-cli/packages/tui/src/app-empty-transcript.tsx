@@ -7,15 +7,6 @@ const h = React.createElement as (
   ...children: React.ReactNode[]
 ) => React.ReactElement;
 
-export const ZCODE_LOGO_LINES = [
-  "███████╗ ██████╗ ██████╗ ██████╗ ███████╗",
-  "   ███╔╝██╔════╝██╔═══██╗██╔══██╗██╔════╝",
-  "  ███╔╝ ██║     ██║   ██║██║  ██║█████╗  ",
-  " ███╔╝  ██║     ██║   ██║██║  ██║██╔══╝  ",
-  "███████╗╚██████╗╚██████╔╝██████╔╝███████╗",
-  "╚══════╝ ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝",
-] as const;
-
 // minimal-empty-transcript-logo: local patch — replace the six-line ASCII
 // banner with the figlet "Rammstein" wordmark "zcode" (ASCII-only glyphs, so
 // every glyph is single-cell even in JetBrains Mono / IDEA terminal — the
@@ -23,8 +14,7 @@ export const ZCODE_LOGO_LINES = [
 // first letter is the accent color, the rest is the text color. All rows are
 // padded to one common width so per-row centering keeps the columns aligned.
 // Statically centered, no shimmer; the `animated` prop is accepted and
-// ignored. ZCODE_LOGO_LINES stays exported for tests; assertions that expect
-// the banner to render no longer hold.
+// ignored. ZCODE_LOGO_LINES lists the rendered rows for tests.
 const LOGO_ROW_WIDTH = 40;
 const LOGO_ROWS: ReadonlyArray<readonly [string, string]> = [
   ["  ______", "  ______  _____  _____   ______ "],
@@ -32,6 +22,10 @@ const LOGO_ROWS: ReadonlyArray<readonly [string, string]> = [
   ["  .-`.-`", " |   |__ |     ||      \\|   ___|"],
   [" |______|", "|______|\\_____/|______/|______|"],
 ] as const;
+
+export const ZCODE_LOGO_LINES: readonly string[] = LOGO_ROWS.map(
+  ([firstLetter, rest]) => firstLetter + rest,
+);
 
 export function EmptyTranscriptLogo(_props: { animated?: boolean } = {}): React.ReactElement {
   return h(

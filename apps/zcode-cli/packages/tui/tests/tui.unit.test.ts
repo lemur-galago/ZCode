@@ -17,7 +17,7 @@ import { moveInputCursorToEnd } from "../src/app-input-pane.js";
 import { createSelectionCopyHandler, hasCopyableSelectionText } from "../src/app-copy.js";
 import { modelNetworkRequestTargetFromPayload } from "../src/app-event-data.js";
 import { appendAgentResult } from "../src/app-submit.js";
-import type { Message, SidebarState, ToolTranscriptPart } from "../src/app-model.js";
+import { palette, type Message, type SidebarState, type ToolTranscriptPart } from "../src/app-model.js";
 import {
   applyToolTranscriptEvent,
   formatFileDiffDisplay,
@@ -59,10 +59,19 @@ test("renders a ZCODE logo placeholder for an empty transcript", () => {
   const [child] = reactElementChildren(
     ContentPane({ copy: EN_COPY, focused: false, messages: [] }),
   );
-  const lines = collectTextLines(EmptyTranscriptLogo());
+  // Every row is two text nodes: the accent-colored first letter and the rest.
+  const nodes = collectTextNodes(EmptyTranscriptLogo());
+  const lines: string[] = [];
+  for (let index = 0; index < nodes.length; index += 2) {
+    lines.push((nodes[index]?.text ?? "") + (nodes[index + 1]?.text ?? ""));
+  }
 
   assert.equal(child?.type, EmptyTranscriptLogo);
   assert.deepEqual(lines, [...ZCODE_LOGO_LINES]);
+  assert.deepEqual(
+    nodes.map((node) => node.style.fg),
+    ZCODE_LOGO_LINES.flatMap(() => [palette.accent, palette.text]),
+  );
 });
 
 test("projects logo shimmer without changing the source text", () => {
