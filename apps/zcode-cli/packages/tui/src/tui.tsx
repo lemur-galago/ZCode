@@ -6,6 +6,7 @@ import React from "react";
 import { TuiApp } from "./app.js";
 import { TuiStartupScreen } from "./app-startup.js";
 import { createSelectionCopyHandler, hasCopyableSelectionText } from "./app-copy.js";
+import { installDoubleClickSelection } from "./app-double-click-select.js";
 import { activeTuiTheme, resolveTuiThemeMode, setActiveTuiThemeMode } from "./theme/index.js";
 import { resolveInitialTerminalThemeMode } from "./theme/terminal.js";
 import type { TuiOptions } from "./types.js";
@@ -100,6 +101,10 @@ export async function runTuiWithRenderer(
     writeClipboardText: options.writeClipboardText,
   });
 
+  // Local patch (double-click-word-select): the renderer selection is the one
+  // copySelection reads, so the word lands in the same Ctrl+C path as a drag.
+  const uninstallDoubleClickSelection = installDoubleClickSelection(renderer);
+
   const renderApp = (readyOptions: TuiOptions) => {
     if (destroyed) return;
     const initialThemeMode = resolveTuiThemeMode(readyOptions.theme, terminalThemeMode);
@@ -142,6 +147,7 @@ export async function runTuiWithRenderer(
       destroyed = true;
       renderer.off(CliRenderEvents.FRAME, initialize);
       renderer.off(CliRenderEvents.THEME_MODE, handleThemeMode);
+      uninstallDoubleClickSelection();
       themeModeListeners.clear();
       root.unmount();
       resolve(exitCode);
