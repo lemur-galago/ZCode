@@ -1,7 +1,9 @@
 import { baseComponents } from "@mbears/opentui-react";
+import type { SyntaxStyle } from "@mbears/opentui-core";
 import React from "react";
 import { createMarkdownSyntaxStyle } from "./app-markdown-theme.js";
 import { activeTuiTheme } from "./theme/index.js";
+import type { TuiThemeTokens } from "./theme/index.js";
 
 type MarkdownRenderMode = "markdown" | "code" | "plain";
 
@@ -34,6 +36,22 @@ export function substituteUnsupportedGlyphs(value: string): string {
   return value.replace(/\u2116/g, "#");
 }
 
+// Local patch (markdown-syntax-style-cache): OpenTUI treats a new syntaxStyle
+// object as a style change and on the next frame re-applies the content of
+// every block of the message; each native re-apply leaks a 64 KB block. A
+// message re-rendered on every spinner tick therefore grew its session by
+// tens of GB a day. The theme object is stable per theme, so keep one style.
+let cachedSyntaxStyleTheme: TuiThemeTokens | undefined;
+let cachedSyntaxStyle: SyntaxStyle | undefined;
+
+function markdownSyntaxStyle(theme: TuiThemeTokens): SyntaxStyle | undefined {
+  if (theme !== cachedSyntaxStyleTheme) {
+    cachedSyntaxStyleTheme = theme;
+    cachedSyntaxStyle = createMarkdownSyntaxStyle(theme);
+  }
+  return cachedSyntaxStyle;
+}
+
 export function MarkdownText({
   content,
   foregroundColor,
@@ -47,7 +65,7 @@ export function MarkdownText({
   }
   const safeContent = substituteUnsupportedGlyphs(content);
 
-  const syntaxStyle = createMarkdownSyntaxStyle(theme);
+  const syntaxStyle = markdownSyntaxStyle(theme);
   if (mode === "markdown") {
     if (syntaxStyle) {
       return h("markdown", {

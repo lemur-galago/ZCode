@@ -4,7 +4,7 @@ import { MessageRow } from "../src/app-transcript-components.js";
 import { palette } from "../src/app-model.js";
 import { detectMarkdownRenderMode, MarkdownText } from "../src/app-markdown.js";
 import { markdownSyntaxRules } from "../src/app-markdown-theme.js";
-import { DARK_TUI_THEME } from "../src/theme/index.js";
+import { DARK_TUI_THEME, setActiveTuiThemeMode } from "../src/theme/index.js";
 
 test("detects the best available markdown render mode", () => {
   assert.equal(
@@ -39,6 +39,25 @@ test("uses OpenTUI native markdown when available", () => {
   assert.equal(node.props.conceal, true);
   assert.equal(node.props.streaming, true);
   assert.ok(node.props.syntaxStyle);
+});
+
+test("keeps one syntax style object across renders of unchanged theme", () => {
+  // Local patch (markdown-syntax-style-cache): a new object per render makes
+  // OpenTUI re-apply every block's content, and each re-apply leaks native memory.
+  const first = MarkdownText({ content: "## Title\n\nText.", mode: "markdown" });
+  const again = MarkdownText({ content: "Another **message**.", mode: "markdown" });
+  const codeMode = MarkdownText({ content: "## Title", mode: "code" });
+
+  assert.equal(again.props.syntaxStyle, first.props.syntaxStyle);
+  assert.equal(codeMode.props.syntaxStyle, first.props.syntaxStyle);
+
+  setActiveTuiThemeMode("light");
+  try {
+    const light = MarkdownText({ content: "## Title", mode: "markdown" });
+    assert.notEqual(light.props.syntaxStyle, first.props.syntaxStyle);
+  } finally {
+    setActiveTuiThemeMode("dark");
+  }
 });
 
 test("passes underscore-delimited text through to native markdown unchanged", () => {
