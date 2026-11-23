@@ -28,6 +28,15 @@ function Test-ZCodeCheckout([string]$Root) {
 
 function Test-NodeDir([string]$Dir) { Test-Path (Join-Path $Dir "corepack.cmd") }
 
+# Whether a zcode window was started from the given installed version. Only node.exe is locked
+# there and the window keeps loading the other files: such a folder must not be deleted or replaced.
+# "Yes" when the running processes cannot be listed, so that nothing is deleted in that case.
+function Test-RunningFrom([string]$VersionRoot) {
+    if ($null -eq $script:runningNode) { return $true }
+    $prefix = $VersionRoot.TrimEnd("\") + "\"
+    return [bool]($script:runningNode | Where-Object { $_ -and $_.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
+}
+
 # External commands run with ErrorActionPreference=Continue: under Stop, PowerShell 5.1 turns every
 # stderr line of an external command into a terminating error as soon as the output of this script
 # is redirected (.\install.ps1 *> log.txt). Check $LASTEXITCODE after the call.
@@ -243,13 +252,21 @@ $bin = Join-Path $InstallDir "bin"
 $versions = Join-Path $InstallDir "versions"
 $versionRoot = Join-Path $versions $info.versionId
 $package = Join-Path $versionRoot "ZCode-CLI-Portable"
+# Where the running node.exe processes were started from; $null when they cannot be listed.
+$runningNode = $null
+try { $runningNode = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" | ForEach-Object { $_.ExecutablePath }) } catch { }
 New-Item -ItemType Directory -Force $versions, $bin | Out-Null
-if (Test-Path $versionRoot) { Remove-Item -Recurse -Force $versionRoot }
-New-Item -ItemType Directory -Force $versionRoot | Out-Null
-# robocopy instead of Copy-Item: the package contains paths close to the 260-character limit that
-# PowerShell 5.1 cannot handle. Its exit codes below 8 mean success.
-Invoke-External robocopy @($info.dir, $package, "/E", "/XJ", "/R:2", "/W:2", "/NFL", "/NDL", "/NJH", "/NJS", "/NP")
-if ($LASTEXITCODE -ge 8) { throw "copying the portable package failed (robocopy exit code $LASTEXITCODE)" }
+if ((Test-Path $versionRoot) -and (Test-RunningFrom $versionRoot)) {
+    # The same version is installed already and a zcode window runs from it.
+    Write-Host "$($info.versionId) is installed already and runs in an open zcode window: that copy is kept"
+} else {
+    if (Test-Path $versionRoot) { Remove-Item -Recurse -Force $versionRoot }
+    New-Item -ItemType Directory -Force $versionRoot | Out-Null
+    # robocopy instead of Copy-Item: the package contains paths close to the 260-character limit that
+    # PowerShell 5.1 cannot handle. Its exit codes below 8 mean success.
+    Invoke-External robocopy @($info.dir, $package, "/E", "/XJ", "/R:2", "/W:2", "/NFL", "/NDL", "/NJH", "/NJS", "/NP")
+    if ($LASTEXITCODE -ge 8) { throw "copying the portable package failed (robocopy exit code $LASTEXITCODE)" }
+}
 # UTF-8 without BOM: the launcher reads this file after `chcp 65001`, ANSI would break Cyrillic paths.
 [IO.File]::WriteAllText((Join-Path $InstallDir "source-repo.txt"), $repo, (New-Object Text.UTF8Encoding $false))
 Copy-Item -Path (Join-Path $repo "scripts\zcode-launcher.cmd") -Destination (Join-Path $bin "zcode.cmd") -Force
@@ -272,18 +289,10 @@ $env:PATH = "$env:PATH;$bin"
 $first = (Get-Command zcode -ErrorAction SilentlyContinue | Select-Object -First 1).Source
 
 # --- The launcher always starts the newest version, the older ones are only disk space. A version
-# that a running zcode window was started from is left alone until the window is closed: its files
-# are not locked, but the window keeps loading from that folder. Nothing is deleted when the
-# running processes cannot be listed.
-if ($KeepVersions -gt 0) {
-    $running = $null
-    try { $running = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" | ForEach-Object { $_.ExecutablePath }) } catch { }
-    if ($null -ne $running) {
-        Get-ChildItem $versions -Directory | Sort-Object Name -Descending | Select-Object -Skip $KeepVersions | ForEach-Object {
-            $old = $_.FullName + "\"
-            $inUse = $running | Where-Object { $_ -and $_.StartsWith($old, [StringComparison]::OrdinalIgnoreCase) }
-            if (-not $inUse) { Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue }
-        }
+# that a running zcode window was started from is left alone until the window is closed.
+if ($KeepVersions -gt 0 -and $null -ne $runningNode) {
+    Get-ChildItem $versions -Directory | Sort-Object Name -Descending | Select-Object -Skip $KeepVersions | ForEach-Object {
+        if (-not (Test-RunningFrom $_.FullName)) { Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue }
     }
 }
 
