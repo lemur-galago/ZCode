@@ -13,7 +13,8 @@ import { FileMentionPanel } from "./app-file-mention-panel.js";
 import type { FileMentionState } from "./app-file-mentions.js";
 import { EffortSuggestionPanel } from "./app-effort-suggestion-panel.js";
 import { InputPane, type PromptInputEditor } from "./app-input-pane.js";
-import { InputActiveStatus } from "./app-input-status.js";
+import { InputActiveStatus, type StatusNotice } from "./app-input-status.js";
+import type { ProcessMemoryUsage } from "./app-process-memory.js";
 import { QueuedInputPanel } from "./app-queued-inputs.js";
 import { ModeSuggestionPanel } from "./app-mode-suggestion-panel.js";
 import { ModelSuggestionPanel } from "./app-model-suggestion-panel.js";
@@ -80,6 +81,11 @@ export function AppView(props: {
   onStatusEffortClick?: () => void;
   // Local patch (status-compact-button): click handler for the compact glyph.
   onStatusCompactClick?: () => void;
+  // Local patch (process-memory-indicator): the session's memory usage, the
+  // notice a click on it shows, and that click handler.
+  processMemory?: ProcessMemoryUsage;
+  statusNotice?: StatusNotice;
+  onStatusMemoryClick?: () => void;
   // Local patch (adddir-command): click handlers for the composer folder
   // badge — "➕" opens the native folder picker, the folder name lists the directories.
   onStatusAddDirClick?: () => void;
@@ -240,6 +246,10 @@ export function AppView(props: {
               onStatusModelClick: readOnly ? undefined : props.onStatusModelClick,
               onStatusEffortClick: readOnly ? undefined : props.onStatusEffortClick,
               onStatusCompactClick: readOnly ? undefined : props.onStatusCompactClick,
+              // Local patch (process-memory-indicator).
+              processMemory: props.processMemory,
+              statusNotice: props.statusNotice,
+              onStatusMemoryClick: readOnly ? undefined : props.onStatusMemoryClick,
               onStatusAddDirClick: readOnly ? undefined : props.onStatusAddDirClick,
               onStatusDirClick: readOnly ? undefined : props.onStatusDirClick,
               queuedInputs,
@@ -282,6 +292,10 @@ export function ComposerInputArea(props: {
   // Local patch (status-compact-button): click handler for the compact glyph
   // rendered right before the context badge.
   onStatusCompactClick?: () => void;
+  // Local patch (process-memory-indicator).
+  processMemory?: ProcessMemoryUsage;
+  statusNotice?: StatusNotice;
+  onStatusMemoryClick?: () => void;
   // Local patch (adddir-command): click handlers for the composer folder
   // badge — "➕" opens the native folder picker, the folder name lists the directories.
   onStatusAddDirClick?: () => void;
@@ -387,6 +401,12 @@ export function ComposerInputArea(props: {
         : undefined,
       onStatusCompactMouseDown: props.onStatusCompactClick
         ? () => props.onStatusCompactClick?.()
+        : undefined,
+      // Local patch (process-memory-indicator).
+      notice: props.statusNotice,
+      processMemory: props.processMemory,
+      onStatusMemoryMouseDown: props.onStatusMemoryClick
+        ? () => props.onStatusMemoryClick?.()
         : undefined,
     }),
   );

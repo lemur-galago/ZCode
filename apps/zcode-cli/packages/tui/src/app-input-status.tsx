@@ -5,6 +5,10 @@ import { DEFAULT_TUI_COPY } from "./app-locale.js";
 import { palette } from "./app-model.js";
 import { modelDisplayParts, UNKNOWN_MODEL_FIELD } from "./app-model-ref.js";
 import { spinnerFrame, useSpinnerFrame } from "./app-motion.js";
+import {
+  type ProcessMemoryLevel,
+  type ProcessMemoryUsage,
+} from "./app-process-memory.js";
 import { displayWidth, truncateDisplay } from "./app-terminal-width.js";
 
 const h = React.createElement as (
@@ -26,6 +30,14 @@ const STATUS_RIGHT_GROUP_GAP = "  ";
 // budget uses the explicit width below (2 cells + 1 trailing space = hit area).
 const STATUS_COMPACT_GLYPH = "🔄 ";
 const STATUS_COMPACT_GLYPH_WIDTH = 3;
+// Local patch (process-memory-indicator): the session's memory usage segment
+// ("ram <working set> · commit <commit size>") and the transient notice a click
+// on it shows in the left part of the row. The notice owns the row while it is
+// shown: the model, effort and memory segments are hidden and the context
+// badge with the compact glyph give way when the terminal is narrow.
+const STATUS_MEMORY_WORKING_SET_PREFIX = "ram ";
+const STATUS_MEMORY_COMMIT_PREFIX = "commit ";
+const STATUS_NOTICE_COMMAND_GAP = " ";
 const COMPOSER_STATUS_HEIGHT = 1;
 const COMPOSER_STATUS_HORIZONTAL_PADDING_WIDTH = 0;
 const COMPOSER_STATUS_MIN_METADATA_WIDTH = 8;
@@ -48,14 +60,25 @@ type InputComposerStatusParts = {
 // submitting /model and /effort commands).
 type StatusMouseHandler = (event: { preventDefault: () => void; stopPropagation: () => void }) => void;
 
+// Local patch (process-memory-indicator): notice shown for a while in the
+// status row; `command` is the part the user may want to select and copy.
+export type StatusNotice = {
+  command?: string;
+  text?: string;
+};
+
 type InputActiveStatusOptions = {
   contentWidth?: number;
   contextUsage?: ContextUsage;
   model?: string;
+  // Local patch (process-memory-indicator).
+  notice?: StatusNotice;
+  processMemory?: ProcessMemoryUsage;
   thoughtLevel?: string;
   onStatusModelMouseDown?: StatusMouseHandler;
   onStatusEffortMouseDown?: StatusMouseHandler;
   onStatusCompactMouseDown?: StatusMouseHandler;
+  onStatusMemoryMouseDown?: StatusMouseHandler;
 };
 
 function triggerStatusMouseHandler(
@@ -73,43 +96,56 @@ export function InputActiveStatus({
   contextUsage,
   copy = DEFAULT_TUI_COPY,
   frameMs,
+  // Local patch (process-memory-indicator).
+  notice,
+  processMemory,
   model,
   thoughtLevel,
   onStatusModelMouseDown,
   onStatusEffortMouseDown,
   onStatusCompactMouseDown,
+  onStatusMemoryMouseDown,
 }: {
   active: boolean;
   contentWidth?: number;
   contextUsage?: ContextUsage;
   copy?: TuiCopy;
   frameMs?: number;
+  notice?: StatusNotice;
+  processMemory?: ProcessMemoryUsage;
   model?: string;
   thoughtLevel?: string;
   onStatusModelMouseDown?: StatusMouseHandler;
   onStatusEffortMouseDown?: StatusMouseHandler;
   onStatusCompactMouseDown?: StatusMouseHandler;
+  onStatusMemoryMouseDown?: StatusMouseHandler;
 }): React.ReactElement {
   if (frameMs !== undefined || !active) {
     return inputActiveStatusRow(copy, active ? spinnerFrame(frameMs ?? 0) : undefined, {
       contentWidth,
       contextUsage,
+      notice,
+      processMemory,
       model,
       thoughtLevel,
       onStatusModelMouseDown,
       onStatusEffortMouseDown,
       onStatusCompactMouseDown,
+      onStatusMemoryMouseDown,
     });
   }
   return h(InputActiveStatusContent, {
     contentWidth,
     contextUsage,
     copy,
+    notice,
+    processMemory,
     model,
     thoughtLevel,
     onStatusModelMouseDown,
     onStatusEffortMouseDown,
     onStatusCompactMouseDown,
+    onStatusMemoryMouseDown,
   });
 }
 
@@ -117,29 +153,38 @@ function InputActiveStatusContent({
   contentWidth,
   contextUsage,
   copy,
+  notice,
+  processMemory,
   model,
   thoughtLevel,
   onStatusModelMouseDown,
   onStatusEffortMouseDown,
   onStatusCompactMouseDown,
+  onStatusMemoryMouseDown,
 }: {
   contentWidth?: number;
   contextUsage?: ContextUsage;
   copy: TuiCopy;
+  notice?: StatusNotice;
+  processMemory?: ProcessMemoryUsage;
   model?: string;
   thoughtLevel?: string;
   onStatusModelMouseDown?: StatusMouseHandler;
   onStatusEffortMouseDown?: StatusMouseHandler;
   onStatusCompactMouseDown?: StatusMouseHandler;
+  onStatusMemoryMouseDown?: StatusMouseHandler;
 }): React.ReactElement {
   return inputActiveStatusRow(copy, useSpinnerFrame(true), {
     contentWidth,
     contextUsage,
+    notice,
+    processMemory,
     model,
     thoughtLevel,
     onStatusModelMouseDown,
     onStatusEffortMouseDown,
     onStatusCompactMouseDown,
+    onStatusMemoryMouseDown,
   });
 }
 
@@ -182,16 +227,34 @@ export function inputActiveStatusRow(
   // "model · effort" with the context badge; each segment is a separate text
   // node with an onMouseDown handler (OpenTUI hit-tests renderables), so the
   // switcher needs no coordinate math.
-  const rightGroup = fitStatusRightGroup(
-    statusRightGroupParts(options),
-    activeStatusContextBadgeWidth({
-      contentWidth: options.contentWidth,
-      copy,
-      frame,
-    }),
-  );
+  // Local patch (model-effort-status-switcher): the right-aligned group pairs
+  // "model · effort" with the context badge; each segment is a separate text
+  // node with an onMouseDown handler (OpenTUI hit-tests renderables), so the
+  // switcher needs no coordinate math.
+  const parts = statusRightGroupParts(options);
+  const maxWidth = activeStatusContextBadgeWidth({
+    contentWidth: options.contentWidth,
+    copy,
+    frame,
+  });
+  // Local patch (process-memory-indicator): a notice owns the row while it is
+  // shown — the model, effort and memory segments are hidden, and the context
+  // badge with the compact glyph give way too when the terminal is narrow.
+  const noticeParts = options.notice ? fitStatusNotice(options.notice, maxWidth) : undefined;
+  const hasNotice = statusNoticeWidth(noticeParts) > 0;
+  const rightGroup = hasNotice
+    ? fitStatusRightGroup(
+        { ...parts, effort: undefined, memory: undefined, model: undefined },
+        shiftStatusWidth(maxWidth, -(statusNoticeWidth(noticeParts) + displayWidth(STATUS_RIGHT_GROUP_GAP))),
+      )
+    : fitStatusRightGroup(parts, maxWidth);
   const hasRightGroup = Boolean(
-    rightGroup && (rightGroup.badge || rightGroup.compact || rightGroup.model || rightGroup.effort),
+    rightGroup &&
+      (rightGroup.badge ||
+        rightGroup.compact ||
+        rightGroup.memory ||
+        rightGroup.model ||
+        rightGroup.effort),
   );
   return h(
     "box",
@@ -216,7 +279,41 @@ export function inputActiveStatusRow(
           h("text", { style: { fg: palette.muted } }, copy.input.activeStatusHint),
         )
       : null,
-    hasRightGroup ? h("box", { style: { flexGrow: 1, minWidth: 1 } }) : null,
+    hasRightGroup || hasNotice ? h("box", { style: { flexGrow: 1, minWidth: 1 } }) : null,
+    // Local patch (process-memory-indicator): the notice text is plain text, so
+    // the command in it can be selected with the mouse like any transcript text.
+    noticeParts?.text
+      ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, noticeParts.text)
+      : null,
+    noticeParts?.text && noticeParts.command
+      ? h("text", { style: { fg: palette.muted } }, STATUS_NOTICE_COMMAND_GAP)
+      : null,
+    noticeParts?.command
+      ? h("text", { style: { fg: palette.accent, flexShrink: 0 } }, noticeParts.command)
+      : null,
+    hasNotice && hasRightGroup
+      ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, STATUS_RIGHT_GROUP_GAP)
+      : null,
+    // Local patch (process-memory-indicator): session memory segment, the
+    // first item of the right group; clicking it shows the restart notice.
+    rightGroup?.memory
+      ? h(
+          "text",
+          {
+            onMouseDown: (event: { preventDefault: () => void; stopPropagation: () => void }) =>
+              triggerStatusMouseHandler(event, options.onStatusMemoryMouseDown),
+            style: {
+              fg: processMemoryColor(options.processMemory?.level),
+              flexShrink: 0,
+            },
+          },
+          rightGroup.memory,
+        )
+      : null,
+    rightGroup?.memory &&
+    (rightGroup.model || rightGroup.effort || rightGroup.badge || rightGroup.compact)
+      ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, STATUS_RIGHT_GROUP_GAP)
+      : null,
     rightGroup?.model
       ? h(
           "text",
@@ -463,8 +560,27 @@ type StatusRightGroupParts = {
   badge: string | undefined;
   compact: string | undefined;
   effort: string | undefined;
+  memory: string | undefined;
   model: string | undefined;
 };
+
+// Local patch (process-memory-indicator): "ram <working set> · commit <commit
+// size>"; the half that could not be read is omitted.
+export function processMemoryStatusLabel(usage: ProcessMemoryUsage): string | undefined {
+  const parts = [
+    usage.workingSetLabel ? `${STATUS_MEMORY_WORKING_SET_PREFIX}${usage.workingSetLabel}` : undefined,
+    usage.commitLabel ? `${STATUS_MEMORY_COMMIT_PREFIX}${usage.commitLabel}` : undefined,
+  ].filter((part) => part !== undefined);
+  return parts.length > 0 ? parts.join(STATUS_MODEL_EFFORT_SEPARATOR) : undefined;
+}
+
+// The color follows the commit size: the working set stays small even when the
+// commit charge of a session grows into gigabytes.
+function processMemoryColor(level: ProcessMemoryLevel | undefined): string {
+  if (level === "danger") return palette.danger;
+  if (level === "warning") return palette.warning;
+  return palette.muted;
+}
 
 function statusRightGroupParts(options: InputActiveStatusOptions): StatusRightGroupParts {
   const modelParts = modelDisplayParts((options.model ?? "").trim());
@@ -475,6 +591,8 @@ function statusRightGroupParts(options: InputActiveStatusOptions): StatusRightGr
     // a click handler is wired, so plain callers keep the old badge-only row.
     compact: options.onStatusCompactMouseDown ? STATUS_COMPACT_GLYPH : undefined,
     effort: (options.thoughtLevel ?? "").trim() || undefined,
+    // Local patch (process-memory-indicator).
+    memory: options.processMemory ? processMemoryStatusLabel(options.processMemory) : undefined,
     model:
       model && model !== UNKNOWN_MODEL_FIELD && model.toLowerCase() !== "unknown"
         ? model
@@ -506,35 +624,90 @@ function fitStatusRightGroup(
   if (parts.model || parts.effort) {
     if (badge || compact) remaining -= gapWidth;
     if (remaining < STATUS_MIN_CONTEXT_WIDTH) {
-      return { badge, compact };
+      return withStatusMemory({ badge, compact }, parts.memory, 0);
     }
 
     const modelWidth = parts.model ? displayWidth(parts.model) : 0;
     const effortWidth = parts.effort ? displayWidth(parts.effort) : 0;
     const separatorCount = parts.model && parts.effort ? 1 : 0;
-    if (modelWidth + separatorCount * separatorWidth + effortWidth <= remaining) {
-      return { badge, compact, model: parts.model, effort: parts.effort };
+    const groupWidth = modelWidth + separatorCount * separatorWidth + effortWidth;
+    if (groupWidth <= remaining) {
+      return withStatusMemory(
+        { badge, compact, model: parts.model, effort: parts.effort },
+        parts.memory,
+        remaining - groupWidth,
+      );
     }
 
     // Narrow terminal: drop the effort segment first, then truncate the model.
     if (parts.model) {
       const model = truncateDisplay(parts.model, remaining);
-      return {
-        badge,
-        compact,
-        model: displayWidth(model) > 0 ? model : undefined,
-      };
+      const fitted = displayWidth(model) > 0 ? model : undefined;
+      return withStatusMemory(
+        { badge, compact, model: fitted },
+        parts.memory,
+        remaining - displayWidth(fitted ?? ""),
+      );
     }
     if (parts.effort) {
       const effort = truncateDisplay(parts.effort, remaining);
-      return {
-        badge,
-        compact,
-        effort: displayWidth(effort) > 0 ? effort : undefined,
-      };
+      const fitted = displayWidth(effort) > 0 ? effort : undefined;
+      return withStatusMemory(
+        { badge, compact, effort: fitted },
+        parts.memory,
+        remaining - displayWidth(fitted ?? ""),
+      );
     }
   }
-  return { badge, compact };
+  return withStatusMemory({ badge, compact }, parts.memory, remaining);
+}
+
+// Local patch (process-memory-indicator): the memory segment has the lowest
+// priority of the group — it is shown only when it fits next to everything
+// that survived.
+function withStatusMemory<T extends Partial<StatusRightGroupParts>>(
+  group: T,
+  memory: string | undefined,
+  remaining: number,
+): T {
+  const gap = group.badge || group.compact || group.effort || group.model ? displayWidth(STATUS_RIGHT_GROUP_GAP) : 0;
+  return memory && displayWidth(memory) + gap <= remaining ? { ...group, memory } : group;
+}
+
+type StatusNoticeParts = {
+  command: string | undefined;
+  text: string | undefined;
+};
+
+function fitStatusNotice(notice: StatusNotice, maxWidth?: number): StatusNoticeParts | undefined {
+  if (!notice.text && !notice.command) return undefined;
+  if (maxWidth === undefined || !Number.isFinite(maxWidth)) {
+    return { command: notice.command, text: notice.text };
+  }
+  let remaining = Math.floor(maxWidth);
+  // The command is the part worth copying, so the text gives way first.
+  let command = notice.command;
+  if (command) {
+    if (displayWidth(command) > remaining) command = truncateDisplay(command, remaining);
+    remaining -= displayWidth(command);
+  }
+  let text = notice.text;
+  if (text) {
+    if (command) remaining -= displayWidth(STATUS_NOTICE_COMMAND_GAP);
+    text = remaining > 0 ? truncateDisplay(text, remaining) : "";
+  }
+  return { command: command || undefined, text: text || undefined };
+}
+
+function statusNoticeWidth(parts: StatusNoticeParts | undefined): number {
+  if (!parts) return 0;
+  const both = parts.text && parts.command ? displayWidth(STATUS_NOTICE_COMMAND_GAP) : 0;
+  return displayWidth(parts.text ?? "") + displayWidth(parts.command ?? "") + both;
+}
+
+function shiftStatusWidth(maxWidth: number | undefined, delta: number): number | undefined {
+  if (maxWidth === undefined || !Number.isFinite(maxWidth)) return undefined;
+  return maxWidth + delta;
 }
 
 function fitComposerStatusParts(

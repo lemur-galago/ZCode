@@ -15,8 +15,14 @@ import { filterSlashCommands, reconcileSlashSelection } from "./app-input.js";
 import { modelOptionValue } from "./app-model-ref.js";
 import { useEffortCommandController } from "./app-effort-command.js";
 import { useInputHistory } from "./app-input-history.js";
+import { type StatusNotice } from "./app-input-status.js";
 import { useModeCommandController } from "./app-mode-command.js";
 import { useModelCommandController } from "./app-model-command.js";
+import {
+  STATUS_NOTICE_DURATION_MS,
+  processMemoryNotice,
+  useProcessMemory,
+} from "./app-process-memory.js";
 import {
   createDirectoryPickerGate,
   isDirectoryPickerSupported,
@@ -479,6 +485,28 @@ export function TuiApp({
     void submitValue("/adddir");
   }, [approvalQueue.length, submitValue, subagents.selected]);
 
+  // Local patch (process-memory-indicator): the session's memory usage in the
+  // status row. A click shows, for a while, the command that restarts the
+  // session — the only way to release the memory it has accumulated.
+  const processMemory = useProcessMemory({ read: options.readProcessMemory });
+  const [statusNotice, setStatusNotice] = useState<StatusNotice | undefined>(undefined);
+  const statusNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(
+    () => () => {
+      if (statusNoticeTimerRef.current) clearTimeout(statusNoticeTimerRef.current);
+    },
+    [],
+  );
+  const showStatusMemoryNotice = useCallback(() => {
+    if (subagents.selected) return;
+    if (statusNoticeTimerRef.current) clearTimeout(statusNoticeTimerRef.current);
+    statusNoticeTimerRef.current = setTimeout(() => {
+      statusNoticeTimerRef.current = undefined;
+      setStatusNotice(undefined);
+    }, STATUS_NOTICE_DURATION_MS);
+    setStatusNotice(processMemoryNotice(options.getMainSessionId?.()));
+  }, [options.getMainSessionId, subagents.selected]);
+
   useTuiKeyboardControls({
     readOnlyView: subagents.selected ? { back: subagents.back } : undefined,
     abortControllerRef,
@@ -557,6 +585,10 @@ export function TuiApp({
     onStatusModelClick: cycleStatusModel,
     onStatusEffortClick: cycleStatusEffort,
     onStatusCompactClick: submitStatusCompact,
+    // Local patch (process-memory-indicator).
+    processMemory,
+    statusNotice,
+    onStatusMemoryClick: showStatusMemoryNotice,
     onStatusAddDirClick: openStatusDirPicker,
     onStatusDirClick: submitStatusDirList,
     slashCommands: filteredSlashCommands,

@@ -17,6 +17,7 @@ import type {
   TurnId,
   TurnSteerResult,
 } from "@zcode/contracts";
+import type { ReadProcessMemory } from "./app-process-memory.js";
 
 export type TuiContextUsage = Pick<SessionProjection, "contextUsed" | "contextWindow">;
 
@@ -344,6 +345,9 @@ export type TuiOptions = {
   listWorkflowRuns?: TuiListWorkflowRuns;
   replayWorkflowRuns?: TuiReplayWorkflowRuns;
   getMainSessionId?: TuiGetMainSessionId;
+  // Local patch (process-memory-indicator): replaces the sampler behind the
+  // memory segment of the status row (tests, embedded hosts).
+  readProcessMemory?: ReadProcessMemory;
   registerPermissionRequester?: TuiRegisterPermissionRequester;
   readClipboardImage?: TuiReadClipboardImage;
   recallPreviousInput?: TuiRecallPreviousInput;
