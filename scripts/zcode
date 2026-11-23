@@ -1,0 +1,4 @@
+#!/bin/sh
+# POSIX shell wrapper for Git Bash: typing "zcode" there does not find zcode.cmd.
+# Installed next to zcode.cmd by scripts/install.ps1.
+exec "$(dirname "$0")/zcode.cmd" "$@"

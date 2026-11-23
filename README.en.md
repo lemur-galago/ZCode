@@ -29,6 +29,8 @@ ZCode is an AI coding workspace with desktop, browser, and terminal interfaces. 
 
 ## Setup
 
+**Windows, terminal CLI only:** `irm https://raw.githubusercontent.com/lemur-galago/ZCode/main/scripts/install.ps1 | iex` installs a self-updating build of the CLI (Git for Windows required). See [scripts/INSTALL-WINDOWS.md](scripts/INSTALL-WINDOWS.md).
+
 Install Git, Node.js **24.14.0**, and pnpm **10.33.2**. [mise.toml](mise.toml) is the source of truth for tool versions. Run all development and packaging commands below from the repository root.
 
 ```bash

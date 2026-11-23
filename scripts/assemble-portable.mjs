@@ -55,6 +55,8 @@ const runGit = (gitArgs) =>
   execFileSync("git", gitArgs, { cwd: SRC, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
 const packageJson = JSON.parse(await readFile(resolve(SRC, "package.json"), "utf8"));
+// `zcode --version` reports apps/zcode-cli/package.json; the root version is the one of the source release.
+const cliVersion = JSON.parse(await readFile(resolve(SRC, "apps/zcode-cli/package.json"), "utf8")).version;
 let commit = "unknown";
 try {
   commit = runGit(["rev-parse", "--short=7", "HEAD"]).split("\n")[0];
@@ -115,27 +117,34 @@ if (reuseRuntime) {
   throw new Error("No runtime source: pass --node <dir> or install over an existing ZCodeCLI install");
 }
 
-// MinGit: reuse from the current install; portable git is optional for the CLI repo features.
+// MinGit: reuse from the current install when there is one. It is optional: git is required for the
+// installation anyway, and the update check uses the system git first.
 const reuseGit = await newestVersionDir((d) => resolve(d, "git/cmd/git.exe"));
 if (reuseGit) {
   await cp(resolve(reuseGit, "git"), resolve(PACKAGE_ROOT, "git"), { recursive: true });
 } else {
-  console.log("WARNING: no MinGit to reuse; installed without portable git (system git will be used)");
+  console.log("note: no MinGit to reuse from a previous install; the system git is used");
 }
 
 // Inner launcher: runs the bundled runtime against the CLI bundle.
 // chcp 65001 is REQUIRED: without it the console decodes the TUI's UTF-8
 // output as the OEM codepage and every box-drawing glyph turns to mojibake.
 // PATH gets the bundled runtime and MinGit so the CLI can spawn git.
+// The code page that was active before is restored on exit: the console must not stay changed.
+// chcp's line ends with a period in some locales, hence the second delimiter.
 await writeFile(
   resolve(PACKAGE_ROOT, "zcode.cmd"),
   [
     "@echo off",
     "setlocal DisableDelayedExpansion",
+    'set "OLDCP="',
+    "for /f \"tokens=2 delims=:.\" %%C in ('chcp') do set \"OLDCP=%%C\"",
     "chcp 65001 >nul",
     'set "PATH=%~dp0runtime;%~dp0git\\cmd;%PATH%"',
     '"%~dp0runtime\\node.exe" "%~dp0agent\\zcode.cjs" %*',
-    "exit /b %errorlevel%",
+    'set "RC=%errorlevel%"',
+    "if defined OLDCP chcp %OLDCP% >nul",
+    "exit /b %RC%",
     "",
   ].join("\r\n"),
   "ascii",
@@ -147,7 +156,8 @@ await writeFile(
     {
       repository: "https://github.com/lemur-galago/ZCode",
       commit,
-      version: packageJson.version,
+      version: cliVersion,
+      sourceVersion: packageJson.version,
       node: process.version,
       target: "win-x64",
       builtAt: now.toISOString(),
@@ -162,7 +172,7 @@ await writeFile(
 await writeFile(
   resolve(PACKAGE_ROOT, "PATCH-NOTES.txt"),
   [
-    `ZCode CLI ${packageJson.version} — build ${versionId} of the fork lemur-galago/ZCode.`,
+    `ZCode CLI ${cliVersion} (source ${packageJson.version}) — build ${versionId} of the fork lemur-galago/ZCode.`,
     "All local patches are part of the git history of the fork.",
     "Update: run zcode — the launcher checks the fork once per day and offers to update.",
     "",
