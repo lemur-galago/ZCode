@@ -272,10 +272,19 @@ $env:PATH = "$env:PATH;$bin"
 $first = (Get-Command zcode -ErrorAction SilentlyContinue | Select-Object -First 1).Source
 
 # --- The launcher always starts the newest version, the older ones are only disk space. A version
-# still used by a running zcode window keeps its locked files until the next install.
+# that a running zcode window was started from is left alone until the window is closed: its files
+# are not locked, but the window keeps loading from that folder. Nothing is deleted when the
+# running processes cannot be listed.
 if ($KeepVersions -gt 0) {
-    Get-ChildItem $versions -Directory | Sort-Object Name -Descending | Select-Object -Skip $KeepVersions |
-        ForEach-Object { Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue }
+    $running = $null
+    try { $running = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" | ForEach-Object { $_.ExecutablePath }) } catch { }
+    if ($null -ne $running) {
+        Get-ChildItem $versions -Directory | Sort-Object Name -Descending | Select-Object -Skip $KeepVersions | ForEach-Object {
+            $old = $_.FullName + "\"
+            $inUse = $running | Where-Object { $_ -and $_.StartsWith($old, [StringComparison]::OrdinalIgnoreCase) }
+            if (-not $inUse) { Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue }
+        }
+    }
 }
 
 Write-Host ""

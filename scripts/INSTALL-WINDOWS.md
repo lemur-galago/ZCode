@@ -43,7 +43,7 @@ In Git Bash the command is `zcode` as well: a small shell wrapper is installed n
 | `-InstallDir <dir>` | Install root. Default `%LOCALAPPDATA%\Programs\ZCodeCLI` |
 | `-SourceDir <dir>` | Where the source checkout lives. Default `%LOCALAPPDATA%\ZCodeCLI-src` |
 | `-NodeVersion <x.y.z>` | Node.js used for the build and shipped as the runtime. Default `24.14.0` |
-| `-KeepVersions <n>` | Installed versions to keep. Older ones are deleted after an install. Default `3`, `0` keeps all |
+| `-KeepVersions <n>` | Installed versions to keep. Older ones are deleted after an install, except the ones that running zcode windows were started from. Default `3`, `0` keeps all |
 | `-NoPathUpdate` | Leave the user PATH alone |
 | `-SkipBuild` | The tree is already built and assembled (`.build\portable-info.json` exists): only install |
 | `-Uninstall` | Remove the install folder and the PATH entry. The source checkout stays |
