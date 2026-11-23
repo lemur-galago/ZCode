@@ -5,7 +5,13 @@ const DEFAULT_MAX_CLIPBOARD_TEXT_BYTES = 1024 * 1024;
 const OSC_52_CLIPBOARD_TARGET = "c";
 const OSC_52_PREFIX = "\x1b]52;";
 const OSC_52_SUFFIX = "\x07";
-const POWERSHELL_SET_CLIPBOARD = "Set-Clipboard -Value ([Console]::In.ReadToEnd())";
+// Local patch (windows-clipboard-utf8): Windows PowerShell decodes piped
+// stdin with the console input code page (CP866 on a Russian system), which
+// turned every non-ASCII character of the copied TUI text into mojibake. The
+// command reads the raw bytes and decodes them as UTF-8 itself.
+const POWERSHELL_SET_CLIPBOARD =
+  "$m = New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($m); " +
+  "Set-Clipboard -Value ([Text.Encoding]::UTF8.GetString($m.ToArray()))";
 
 type CommandResult = {
   exitCode: number | null;
