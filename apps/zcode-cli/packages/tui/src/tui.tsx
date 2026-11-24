@@ -7,7 +7,13 @@ import { TuiApp } from "./app.js";
 import { TuiStartupScreen } from "./app-startup.js";
 import { createSelectionCopyHandler, hasCopyableSelectionText } from "./app-copy.js";
 import { installDoubleClickSelection } from "./app-double-click-select.js";
-import { activeTuiTheme, resolveTuiThemeMode, setActiveTuiThemeMode } from "./theme/index.js";
+import { installThemeSelectionColors } from "./app-selection-colors.js";
+import {
+  activeTuiTheme,
+  getActiveTuiThemeMode,
+  resolveTuiThemeMode,
+  setActiveTuiThemeMode,
+} from "./theme/index.js";
 import { resolveInitialTerminalThemeMode } from "./theme/terminal.js";
 import type { TuiOptions } from "./types.js";
 
@@ -86,8 +92,12 @@ export async function runTuiWithRenderer(
   const handleThemeMode = (mode: UiThemeMode) => {
     if (destroyed) return;
     terminalThemeMode = mode;
+    const resolved = resolveTuiThemeMode(options.theme, mode);
+    // Local patch (selection-theme-colors): the selection background is taken
+    // from the theme when the selection is drawn, so an existing selection
+    // would keep the old color. Drop it; the next selection gets the new one.
+    if (resolved !== getActiveTuiThemeMode() && renderer.hasSelection) renderer.clearSelection();
     if (!appMounted) {
-      const resolved = resolveTuiThemeMode(options.theme, mode);
       setActiveTuiThemeMode(resolved);
       renderer.setBackgroundColor(activeTuiTheme(resolved).background);
     }
@@ -104,6 +114,9 @@ export async function runTuiWithRenderer(
   // Local patch (double-click-word-select): the renderer selection is the one
   // copySelection reads, so the word lands in the same Ctrl+C path as a drag.
   const uninstallDoubleClickSelection = installDoubleClickSelection(renderer);
+  // Local patch (selection-theme-colors): the color is read when the selection
+  // is drawn, so it also follows a theme change after the first paint.
+  const uninstallThemeSelectionColors = installThemeSelectionColors();
 
   const renderApp = (readyOptions: TuiOptions) => {
     if (destroyed) return;
@@ -148,6 +161,7 @@ export async function runTuiWithRenderer(
       renderer.off(CliRenderEvents.FRAME, initialize);
       renderer.off(CliRenderEvents.THEME_MODE, handleThemeMode);
       uninstallDoubleClickSelection();
+      uninstallThemeSelectionColors();
       themeModeListeners.clear();
       root.unmount();
       resolve(exitCode);

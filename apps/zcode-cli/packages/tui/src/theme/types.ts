@@ -19,6 +19,7 @@ export type TuiThemeTokens = {
   backgroundElement: string;
   backgroundMenu: string;
   backgroundMessageUser: string;
+  selectionBackground: string;
   border: string;
   borderActive: string;
   borderSubtle: string;
