@@ -61,9 +61,10 @@ test("gives the markdown element the theme text color", () => {
   }
 });
 
-test("draws a bash code block in the theme text color on the light theme", async () => {
+test("draws a bash code block in theme colors on the light theme", async () => {
   // Local patch (markdown-code-block-foreground): the defect only shows in a
-  // real render - the block was white on the light background.
+  // real render - the block was white on the light background. Since the
+  // script-highlight patch the tokens come from Shiki in the colors of the theme.
   setActiveTuiThemeMode("light");
   let view: Awaited<ReturnType<typeof testRender>> | undefined;
   try {
@@ -92,7 +93,19 @@ test("draws a bash code block in the theme text color on the light theme", async
         .find((span) => span.text.includes("hello world"));
     }
     assert.ok(codeSpan, "the code line is rendered");
-    assert.equal(colorHex(codeSpan.fg), LIGHT_TUI_THEME.markdownText);
+    const spans = view
+      ?.captureSpans()
+      .lines.flatMap((line) => line.spans)
+      .filter((span) => span.text.trim().length > 0);
+    const spanColor = (text: string) => {
+      const span = spans?.find((candidate) => candidate.text === text);
+      assert.ok(span, `${text} is its own span`);
+      return colorHex(span.fg);
+    };
+    assert.equal(spanColor("echo"), LIGHT_TUI_THEME.syntaxFunction);
+    assert.equal(spanColor('"hello world"'), LIGHT_TUI_THEME.syntaxString);
+    // Nothing is left in OpenTUI's white default.
+    assert.equal(spans?.some((span) => colorHex(span.fg) === "#ffffff"), false);
   } finally {
     await act(async () => {
       view?.renderer.destroy();

@@ -32,9 +32,10 @@ export type ShikiHighlightSegment = {
   text: string;
 };
 
-type ShikiHighlighter = Awaited<ReturnType<typeof createHighlighter>>;
+export type ShikiHighlighter = Awaited<ReturnType<typeof createHighlighter>>;
 
 let highlighterPromise: Promise<ShikiHighlighter> | undefined;
+let highlighter: ShikiHighlighter | undefined;
 const loadedLanguages = new Set<BundledLanguage>();
 const highlightCache = new Map<string, ShikiHighlightSegment[][] | undefined>();
 
@@ -76,6 +77,7 @@ export async function highlightShikiCodeLines(input: {
 
 export function resetShikiHighlighterForTest(): void {
   highlighterPromise = undefined;
+  highlighter = undefined;
   loadedLanguages.clear();
   highlightCache.clear();
 }
@@ -86,11 +88,8 @@ async function tokenizeLines(input: {
   theme: BundledTheme;
 }): Promise<ShikiHighlightSegment[][] | undefined> {
   try {
-    const highlighter = await getHighlighter();
-    if (!loadedLanguages.has(input.language)) {
-      await highlighter.loadLanguage(input.language);
-      loadedLanguages.add(input.language);
-    }
+    const highlighter = await loadShikiLanguage(input.language).then(() => loadedHighlighter());
+    if (!highlighter) return undefined;
 
     const result = highlighter.codeToTokens(input.lines.join("\n"), {
       lang: input.language,
@@ -111,12 +110,34 @@ async function tokenizeLines(input: {
   }
 }
 
-function getHighlighter(): Promise<ShikiHighlighter> {
+// Local patch (script-highlight): the same highlighter is shared with the
+// fenced code blocks and the composer, which also need it synchronously once
+// it is up, so the instance is kept besides the promise.
+export function getHighlighter(): Promise<ShikiHighlighter> {
   highlighterPromise ??= createHighlighter({
     langs: [],
     themes: [...SHIKI_THEMES],
+  }).then((instance) => {
+    highlighter = instance;
+    return instance;
   });
   return highlighterPromise;
+}
+
+/** The highlighter once it is ready; undefined before that. */
+export function loadedHighlighter(): ShikiHighlighter | undefined {
+  return highlighter;
+}
+
+export function isShikiLanguageLoaded(language: string): boolean {
+  return loadedLanguages.has(language as BundledLanguage);
+}
+
+export async function loadShikiLanguage(language: BundledLanguage): Promise<void> {
+  if (loadedLanguages.has(language)) return;
+  const instance = await getHighlighter();
+  await instance.loadLanguage(language);
+  loadedLanguages.add(language);
 }
 
 function isBundledLanguage(language: string): language is BundledLanguage {

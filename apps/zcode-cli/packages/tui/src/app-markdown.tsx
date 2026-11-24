@@ -2,6 +2,7 @@ import { baseComponents } from "@mbears/opentui-react";
 import type { SyntaxStyle } from "@mbears/opentui-core";
 import React from "react";
 import { createMarkdownSyntaxStyle } from "./app-markdown-theme.js";
+import { scriptHighlightClient } from "./app-script-highlight.js";
 import { activeTuiTheme } from "./theme/index.js";
 import type { TuiThemeTokens } from "./theme/index.js";
 
@@ -79,6 +80,10 @@ export function MarkdownText({
         fg: textColor,
         streaming,
         syntaxStyle,
+        // Local patch (script-highlight): languages without a bundled
+        // tree-sitter grammar (bash, python, powershell, ...) are highlighted
+        // by Shiki through the same scope names.
+        treeSitterClient: scriptHighlightClient(),
       });
     }
     return h("text", { style: { fg: textColor } }, safeContent);
