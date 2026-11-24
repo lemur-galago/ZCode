@@ -4,6 +4,9 @@ import type { Message } from "./app-model.js";
 import { palette } from "./app-model.js";
 import { EmptyTranscriptLogo } from "./app-empty-transcript.js";
 import { DEFAULT_TUI_COPY } from "./app-locale.js";
+// Local patch (script-highlight): scripts in user messages.
+import { ScriptText } from "./app-script-text.js";
+import { scriptDraft } from "./app-script-draft.js";
 import { MarkdownText, substituteUnsupportedGlyphs } from "./app-markdown.js";
 import { ThoughtTranscriptPartView } from "./app-thought-components.js";
 import { ToolTranscriptPartView } from "./app-tool-components.js";
@@ -141,13 +144,7 @@ export function MessageRow({
           }),
         ]
       : parts.length === 0
-        ? [
-            h(
-              "text",
-              { key: "content", style: { fg: plainTextColor } },
-              substituteUnsupportedGlyphs(message.content),
-            ),
-          ]
+        ? [plainContent(message.content, plainTextColor)]
         : []),
     ...parts.map((part, partIndex) => {
       if (part.type === "tool") {
@@ -192,6 +189,16 @@ export function MessageRow({
           );
     }),
   );
+}
+
+// Local patch (script-highlight): a user message shows the scripts it holds in
+// color, as in the composer where it was typed; prose stays the plain text
+// element it always was.
+function plainContent(content: string, color: string): React.ReactElement {
+  if (scriptDraft(content).regions.length > 0) {
+    return h(ScriptText, { content, foregroundColor: color, key: "content" });
+  }
+  return h("text", { key: "content", style: { fg: color } }, substituteUnsupportedGlyphs(content));
 }
 
 function CompactTimelineRow({

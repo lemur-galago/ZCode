@@ -2,6 +2,8 @@ import type { TextareaRenderable } from "@mbears/opentui-core";
 import type { TuiCopy } from "@zcode/i18n";
 import React from "react";
 import { DEFAULT_TUI_COPY } from "./app-locale.js";
+// Local patch (script-highlight): syntax colors in the composer.
+import { useComposerHighlighting } from "./app-composer-highlight.js";
 import { palette } from "./app-model.js";
 import { InputComposerStatus } from "./app-input-status.js";
 import { wordWrappedLineCount } from "./app-terminal-width.js";
@@ -145,6 +147,10 @@ export function InputPane({
     const textarea = textareaRef.current;
     if (textarea) moveInputCursorToEnd(textarea);
   }, [resetCursorToEndVersion, value]);
+
+  // Local patch (script-highlight): fenced blocks and a draft that is a script
+  // take syntax colors in the composer.
+  useComposerHighlighting(textareaRef, value);
 
   const handleContentChange = React.useCallback(() => {
     if (syncingValueRef.current) return;
