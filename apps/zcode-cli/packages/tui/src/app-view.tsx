@@ -8,6 +8,7 @@ import {
   LoginRequiredPanel,
   SlashSuggestionPanel,
 } from "./app-components.js";
+import type { SelectionCopyOptions } from "./app-copy.js";
 import { SelectionPanel } from "./app-selection-panel.js";
 import { ContentPane } from "./app-transcript-components.js";
 import { FileMentionPanel } from "./app-file-mention-panel.js";
@@ -60,7 +61,7 @@ export function AppView(props: {
   cacheStats?: CacheStats;
   contextUsage: ContextUsage;
   copy: ReturnType<typeof import("@zcode/i18n").getZCodeCopy>["tui"];
-  copyCurrentSelection: () => boolean;
+  copyCurrentSelection: (options?: SelectionCopyOptions) => boolean;
   draft: string;
   editorRef: React.MutableRefObject<PromptInputEditor | null>;
   effortOptions: readonly TuiEffortOption[];
@@ -124,7 +125,9 @@ export function AppView(props: {
 }): React.ReactElement {
   const readOnly = Boolean(props.subagents?.selected);
   const handleShellMouseUp = React.useCallback(() => {
-    props.copyCurrentSelection();
+    // Local patch (persistent-selection): the text is copied on release as
+    // before, but the highlight stays until it is copied again or dismissed.
+    props.copyCurrentSelection({ keepSelection: true });
     if (!readOnly) props.editorRef.current?.focus();
   }, [props.copyCurrentSelection, props.editorRef, readOnly]);
   const actionPanelContentWidth = actionPanelContentWidthForTerminal(

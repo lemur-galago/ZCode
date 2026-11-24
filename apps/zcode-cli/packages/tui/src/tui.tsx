@@ -7,6 +7,7 @@ import { TuiApp } from "./app.js";
 import { TuiStartupScreen } from "./app-startup.js";
 import { createSelectionCopyHandler, hasCopyableSelectionText } from "./app-copy.js";
 import { installDoubleClickSelection } from "./app-double-click-select.js";
+import { installPersistentSelection } from "./app-persistent-selection.js";
 import { installThemeSelectionColors } from "./app-selection-colors.js";
 import {
   activeTuiTheme,
@@ -117,6 +118,9 @@ export async function runTuiWithRenderer(
   // Local patch (selection-theme-colors): the color is read when the selection
   // is drawn, so it also follows a theme change after the first paint.
   const uninstallThemeSelectionColors = installThemeSelectionColors();
+  // Local patch (persistent-selection): watches the raw mouse stream, so it
+  // dismisses a selection even where the renderer is stopped from doing it.
+  const uninstallPersistentSelection = installPersistentSelection(renderer);
 
   const renderApp = (readyOptions: TuiOptions) => {
     if (destroyed) return;
@@ -161,6 +165,7 @@ export async function runTuiWithRenderer(
       renderer.off(CliRenderEvents.FRAME, initialize);
       renderer.off(CliRenderEvents.THEME_MODE, handleThemeMode);
       uninstallDoubleClickSelection();
+      uninstallPersistentSelection();
       uninstallThemeSelectionColors();
       themeModeListeners.clear();
       root.unmount();

@@ -23,12 +23,18 @@ type SelectionCopyHandlerOptions = {
   writeClipboardText?: TuiWriteClipboardText;
 };
 
+export type SelectionCopyOptions = {
+  // Local patch (persistent-selection): a copy on mouse-up leaves the highlight
+  // in place so the selection can be seen and copied again with Ctrl+C.
+  keepSelection?: boolean;
+};
+
 export function createSelectionCopyHandler({
   clearSelection,
   getSelectionText,
   writeClipboardText,
-}: SelectionCopyHandlerOptions): () => Promise<SelectionCopyResult> {
-  return async () => {
+}: SelectionCopyHandlerOptions): (options?: SelectionCopyOptions) => Promise<SelectionCopyResult> {
+  return async ({ keepSelection = false }: SelectionCopyOptions = {}) => {
     const text = getSelectionText();
     if (!hasCopyableSelectionText(text)) {
       clearSelection();
@@ -51,7 +57,7 @@ export function createSelectionCopyHandler({
         message: error instanceof Error ? error.message : String(error),
       };
     } finally {
-      clearSelection();
+      if (!keepSelection) clearSelection();
     }
   };
 }

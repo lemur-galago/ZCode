@@ -3,7 +3,11 @@ import { getZCodeCopy } from "@zcode/i18n";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppView } from "./app-view.js";
 import type { PromptInputEditor } from "./app-input-pane.js";
-import { selectionCopyStatus, type SelectionCopyResult } from "./app-copy.js";
+import {
+  selectionCopyStatus,
+  type SelectionCopyOptions,
+  type SelectionCopyResult,
+} from "./app-copy.js";
 import { useClipboardImagePaste } from "./app-clipboard-image.js";
 import { useFileMentionController } from "./app-file-mentions.js";
 import { useTuiKeyboardControls } from "./app-keyboard.js";
@@ -58,7 +62,7 @@ import { useSubagents } from "./app-subagents.js";
 import type { TuiOptions } from "./types.js";
 
 type TuiAppProps = {
-  copySelection: () => Promise<SelectionCopyResult>;
+  copySelection: (options?: SelectionCopyOptions) => Promise<SelectionCopyResult>;
   hasCopyableSelection: () => boolean;
   options: TuiOptions;
   onExit: (code: number) => void;
@@ -368,15 +372,18 @@ export function TuiApp({
     setStatus,
   });
 
-  const copyCurrentSelection = useCallback((): boolean => {
-    if (!hasCopyableSelection()) return false;
-    void copySelection().then((result) => {
-      const copyStatus = selectionCopyStatus(result, copy.tui.copy);
-      if (copyStatus.status) setStatus(copyStatus.status);
-      if (copyStatus.details) setStatusDetails(copyStatus.details);
-    });
-    return true;
-  }, [copy, copySelection, hasCopyableSelection]);
+  const copyCurrentSelection = useCallback(
+    (selectionOptions?: SelectionCopyOptions): boolean => {
+      if (!hasCopyableSelection()) return false;
+      void copySelection(selectionOptions).then((result) => {
+        const copyStatus = selectionCopyStatus(result, copy.tui.copy);
+        if (copyStatus.status) setStatus(copyStatus.status);
+        if (copyStatus.details) setStatusDetails(copyStatus.details);
+      });
+      return true;
+    },
+    [copy, copySelection, hasCopyableSelection],
+  );
   const switchMode = useTuiModeSwitcher({
     mode,
     setMode,

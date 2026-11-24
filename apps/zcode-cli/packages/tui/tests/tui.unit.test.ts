@@ -348,6 +348,25 @@ test("copies selected text exactly and clears OpenTUI selection", async () => {
   assert.equal(clearCount, 1);
 });
 
+test("keeps the selection on request, as the copy on mouse-up does", async () => {
+  // Local patch (persistent-selection): the highlight stays after the release.
+  let copied = "";
+  let clearCount = 0;
+  const copySelection = createSelectionCopyHandler({
+    clearSelection: () => {
+      clearCount += 1;
+    },
+    getSelectionText: () => "hello",
+    writeClipboardText: (text) => {
+      copied = text;
+    },
+  });
+
+  assert.deepEqual(await copySelection({ keepSelection: true }), { characterCount: 5, kind: "copied" });
+  assert.equal(copied, "hello");
+  assert.equal(clearCount, 0);
+});
+
 test("ignores empty selected text and clears the selection", async () => {
   let clearCount = 0;
   const copySelection = createSelectionCopyHandler({
