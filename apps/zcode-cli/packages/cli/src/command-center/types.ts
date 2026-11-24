@@ -1,6 +1,7 @@
 import type {
   TuiPromptAttachment,
   TuiPromptInput,
+  TuiReadAccountQuota,
   TuiSendInput,
   TuiSendInputResult,
   TuiSubmitPrompt,
@@ -314,6 +315,10 @@ export type CommandCenterDeps = {
   >;
   listWorkingDirectories?: () => string[];
   getWorkingDirectoryBase?: () => string | undefined;
+  // Local patch (account-quota-indicator): /usage support. The same reader the
+  // prompt handler hands to the TUI status row; the command handler only
+  // formats what it reads.
+  readAccountQuota?: TuiReadAccountQuota;
   getLocale?: () => TuiSubmitPromptResult["locale"];
   getMode?: () => CommandCenterMode;
   hasSelectableModels?: () => Promise<boolean> | boolean;

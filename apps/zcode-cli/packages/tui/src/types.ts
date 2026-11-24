@@ -17,9 +17,21 @@ import type {
   TurnId,
   TurnSteerResult,
 } from "@zcode/contracts";
+import type {
+  AccountQuotaSnapshot,
+  AccountQuotaWindow,
+  AccountQuotaWindowKind,
+  ReadAccountQuota,
+} from "./app-account-quota.js";
 import type { ReadProcessMemory } from "./app-process-memory.js";
 
 export type TuiContextUsage = Pick<SessionProjection, "contextUsed" | "contextWindow">;
+
+// Local patch (account-quota-indicator): reads the used quota of the account
+// behind the given provider (the Coding Plan pools), undefined when there is none.
+export type TuiReadAccountQuota = ReadAccountQuota;
+
+export type { AccountQuotaSnapshot, AccountQuotaWindow, AccountQuotaWindowKind };
 
 export type TuiSessionMetadata = Pick<
   TuiSubmitPromptResult,
@@ -348,6 +360,9 @@ export type TuiOptions = {
   // Local patch (process-memory-indicator): replaces the sampler behind the
   // memory segment of the status row (tests, embedded hosts).
   readProcessMemory?: ReadProcessMemory;
+  // Local patch (account-quota-indicator): supplies the quota segment of the
+  // status row; without it the segment is not shown.
+  readAccountQuota?: ReadAccountQuota;
   registerPermissionRequester?: TuiRegisterPermissionRequester;
   readClipboardImage?: TuiReadClipboardImage;
   recallPreviousInput?: TuiRecallPreviousInput;

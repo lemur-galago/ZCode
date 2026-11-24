@@ -1,6 +1,8 @@
 import type { ToolSearchMode } from "@zcode/contracts";
 import type { RunContext, GlobalOptions } from "@zcode/shared-types";
 import { resolveZCodeRuntimeEnv, type DynamicWorkflowMode } from "@zcode/shared";
+// Local patch (account-quota-indicator).
+import { resolveAccountQuotaReader } from "./account-quota.js";
 import { createNodeClipboardImageReader } from "./clipboard-image.js";
 import { createNodeClipboardTextWriter } from "./clipboard-text.js";
 import { listSlashCommandSuggestions } from "./command-center.js";
@@ -103,6 +105,9 @@ export const runTuiCommand = async (
         listWorkflowRuns: promptHandler.listWorkflowRuns,
         replayWorkflowRuns: promptHandler.replayWorkflowRuns,
         getMainSessionId: promptHandler.getMainSessionId,
+        // Local patch (account-quota-indicator): the quota segment of the
+        // status row reads the account through this.
+        readAccountQuota: resolveAccountQuotaReader(deps),
         registerPermissionRequester: promptHandler.registerPermissionRequester,
         writeClipboardText:
           deps.writeClipboardText ?? createNodeClipboardTextWriter({ stdout: ctx.stdout }),

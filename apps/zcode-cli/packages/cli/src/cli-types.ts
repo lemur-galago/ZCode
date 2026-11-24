@@ -1,4 +1,8 @@
-import type { TuiReadClipboardImage, TuiWriteClipboardText } from "@zcode/tui";
+import type {
+  TuiReadAccountQuota,
+  TuiReadClipboardImage,
+  TuiWriteClipboardText,
+} from "@zcode/tui";
 import type { UiLocale } from "@zcode/i18n";
 import type { Logger } from "@zcode/contracts";
 import type {
@@ -104,6 +108,9 @@ export interface RunDependencies extends PluginsCommandOverrides {
   logger?: Logger;
   readClipboardImage?: TuiReadClipboardImage;
   writeClipboardText?: TuiWriteClipboardText;
+  // Local patch (account-quota-indicator): replaces the reader behind the
+  // quota segment of the TUI status row (tests, embedders).
+  readAccountQuota?: TuiReadAccountQuota;
   resolveLatestSession?: (
     options: ResolveLatestSessionOptions,
   ) => ReturnType<typeof resolveLatestSession>;

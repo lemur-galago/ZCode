@@ -10,6 +10,8 @@ import type { GlobalOptions } from "@zcode/shared-types";
 import type { DynamicWorkflowMode } from "@zcode/shared";
 import { createCommandCenter, parseSlashCommand } from "./command-center.js";
 import type { CommandCenterApp } from "./command-center.js";
+// Local patch (account-quota-indicator).
+import { resolveAccountQuotaReader } from "./account-quota.js";
 import { resolveDisplayLocale } from "./locale.js";
 import { createCliHeadlessBrowserRuntime } from "./headless-browser.js";
 // 复用防御式 runtime 读取：subscribeEvents 不在 app 的静态类型面上，
@@ -297,6 +299,9 @@ export function createTuiSubmitPrompt(
     },
     listWorkingDirectories: () => [...addedWorkingDirectories],
     getWorkingDirectoryBase: () => sessionWorkingDirectory,
+    // Local patch (account-quota-indicator): /usage reads the account through
+    // the reader the TUI status row gets as well.
+    readAccountQuota: resolveAccountQuotaReader(deps),
     forkApp: async (targetCheckpointId) => {
       const activeApp = await getApp();
       const result = await activeApp.forkFromCheckpoint?.({ targetCheckpointId });
@@ -393,10 +398,15 @@ export function createTuiSubmitPrompt(
     // Model/effort changes configure subsequent requests, including during an active turn.
     // Local patch (adddir-command): /adddir is the same kind of local config
     // command — apply it immediately instead of queueing the text.
+    // Local patch (account-quota-indicator): /usage too, so the plan usage can
+    // be checked while a turn runs.
     const command = parseSlashCommand(typeof input === "string" ? input : input.text);
     if (
       command?.type === "known" &&
-      (command.name === "model" || command.name === "effort" || command.name === "adddir")
+      (command.name === "model" ||
+        command.name === "effort" ||
+        command.name === "adddir" ||
+        command.name === "usage")
     ) {
       return {
         kind: "command_result",

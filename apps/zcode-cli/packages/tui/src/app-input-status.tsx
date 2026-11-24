@@ -5,6 +5,11 @@ import { DEFAULT_TUI_COPY } from "./app-locale.js";
 import { palette } from "./app-model.js";
 import { modelDisplayParts, UNKNOWN_MODEL_FIELD } from "./app-model-ref.js";
 import { spinnerFrame, useSpinnerFrame } from "./app-motion.js";
+import type {
+  AccountQuotaLevel,
+  AccountQuotaPart,
+  AccountQuotaUsage,
+} from "./app-account-quota.js";
 import {
   type ProcessMemoryLevel,
   type ProcessMemoryUsage,
@@ -38,6 +43,12 @@ const STATUS_COMPACT_GLYPH_WIDTH = 3;
 const STATUS_MEMORY_WORKING_SET_PREFIX = "ram ";
 const STATUS_MEMORY_COMMIT_PREFIX = "commit ";
 const STATUS_NOTICE_COMMAND_GAP = " ";
+// Local patch (account-quota-indicator): the account quota segment of the right
+// group, one text node per pool ("week 74%", "5h 10%") so each has its own
+// color. A notice is clauses joined by the same separator: one that does not
+// fit loses whole clauses from the end before any is cut.
+const STATUS_QUOTA_SEPARATOR = " · ";
+export const STATUS_NOTICE_CLAUSE_SEPARATOR = " · ";
 const COMPOSER_STATUS_HEIGHT = 1;
 const COMPOSER_STATUS_HORIZONTAL_PADDING_WIDTH = 0;
 const COMPOSER_STATUS_MIN_METADATA_WIDTH = 8;
@@ -75,10 +86,13 @@ type InputActiveStatusOptions = {
   notice?: StatusNotice;
   processMemory?: ProcessMemoryUsage;
   thoughtLevel?: string;
+  // Local patch (account-quota-indicator).
+  accountQuota?: AccountQuotaUsage;
   onStatusModelMouseDown?: StatusMouseHandler;
   onStatusEffortMouseDown?: StatusMouseHandler;
   onStatusCompactMouseDown?: StatusMouseHandler;
   onStatusMemoryMouseDown?: StatusMouseHandler;
+  onStatusQuotaMouseDown?: StatusMouseHandler;
 };
 
 function triggerStatusMouseHandler(
@@ -101,10 +115,12 @@ export function InputActiveStatus({
   processMemory,
   model,
   thoughtLevel,
+  accountQuota,
   onStatusModelMouseDown,
   onStatusEffortMouseDown,
   onStatusCompactMouseDown,
   onStatusMemoryMouseDown,
+  onStatusQuotaMouseDown,
 }: {
   active: boolean;
   contentWidth?: number;
@@ -115,10 +131,13 @@ export function InputActiveStatus({
   processMemory?: ProcessMemoryUsage;
   model?: string;
   thoughtLevel?: string;
+  // Local patch (account-quota-indicator).
+  accountQuota?: AccountQuotaUsage;
   onStatusModelMouseDown?: StatusMouseHandler;
   onStatusEffortMouseDown?: StatusMouseHandler;
   onStatusCompactMouseDown?: StatusMouseHandler;
   onStatusMemoryMouseDown?: StatusMouseHandler;
+  onStatusQuotaMouseDown?: StatusMouseHandler;
 }): React.ReactElement {
   if (frameMs !== undefined || !active) {
     return inputActiveStatusRow(copy, active ? spinnerFrame(frameMs ?? 0) : undefined, {
@@ -128,10 +147,12 @@ export function InputActiveStatus({
       processMemory,
       model,
       thoughtLevel,
+      accountQuota,
       onStatusModelMouseDown,
       onStatusEffortMouseDown,
       onStatusCompactMouseDown,
       onStatusMemoryMouseDown,
+      onStatusQuotaMouseDown,
     });
   }
   return h(InputActiveStatusContent, {
@@ -142,10 +163,12 @@ export function InputActiveStatus({
     processMemory,
     model,
     thoughtLevel,
+    accountQuota,
     onStatusModelMouseDown,
     onStatusEffortMouseDown,
     onStatusCompactMouseDown,
     onStatusMemoryMouseDown,
+    onStatusQuotaMouseDown,
   });
 }
 
@@ -157,10 +180,12 @@ function InputActiveStatusContent({
   processMemory,
   model,
   thoughtLevel,
+  accountQuota,
   onStatusModelMouseDown,
   onStatusEffortMouseDown,
   onStatusCompactMouseDown,
   onStatusMemoryMouseDown,
+  onStatusQuotaMouseDown,
 }: {
   contentWidth?: number;
   contextUsage?: ContextUsage;
@@ -169,10 +194,13 @@ function InputActiveStatusContent({
   processMemory?: ProcessMemoryUsage;
   model?: string;
   thoughtLevel?: string;
+  // Local patch (account-quota-indicator).
+  accountQuota?: AccountQuotaUsage;
   onStatusModelMouseDown?: StatusMouseHandler;
   onStatusEffortMouseDown?: StatusMouseHandler;
   onStatusCompactMouseDown?: StatusMouseHandler;
   onStatusMemoryMouseDown?: StatusMouseHandler;
+  onStatusQuotaMouseDown?: StatusMouseHandler;
 }): React.ReactElement {
   return inputActiveStatusRow(copy, useSpinnerFrame(true), {
     contentWidth,
@@ -181,10 +209,12 @@ function InputActiveStatusContent({
     processMemory,
     model,
     thoughtLevel,
+    accountQuota,
     onStatusModelMouseDown,
     onStatusEffortMouseDown,
     onStatusCompactMouseDown,
     onStatusMemoryMouseDown,
+    onStatusQuotaMouseDown,
   });
 }
 
@@ -240,11 +270,19 @@ export function inputActiveStatusRow(
   // Local patch (process-memory-indicator): a notice owns the row while it is
   // shown — the model, effort and memory segments are hidden, and the context
   // badge with the compact glyph give way too when the terminal is narrow.
+  // Local patch (account-quota-indicator): the quota segment gives way as well
+  // (its notice repeats it).
   const noticeParts = options.notice ? fitStatusNotice(options.notice, maxWidth) : undefined;
   const hasNotice = statusNoticeWidth(noticeParts) > 0;
   const rightGroup = hasNotice
     ? fitStatusRightGroup(
-        { ...parts, effort: undefined, memory: undefined, model: undefined },
+        {
+          ...parts,
+          effort: undefined,
+          memory: undefined,
+          model: undefined,
+          quota: undefined,
+        },
         shiftStatusWidth(maxWidth, -(statusNoticeWidth(noticeParts) + displayWidth(STATUS_RIGHT_GROUP_GAP))),
       )
     : fitStatusRightGroup(parts, maxWidth);
@@ -254,7 +292,8 @@ export function inputActiveStatusRow(
         rightGroup.compact ||
         rightGroup.memory ||
         rightGroup.model ||
-        rightGroup.effort),
+        rightGroup.effort ||
+        rightGroup.quota?.length),
   );
   return h(
     "box",
@@ -339,7 +378,15 @@ export function inputActiveStatusRow(
           rightGroup.effort,
         )
       : null,
-    rightGroup?.badge && (rightGroup.model || rightGroup.effort)
+    // Local patch (account-quota-indicator): the account quota between the
+    // model and the compact glyph, separated like the badge is, one text node
+    // per pool with its own color; a click on a pool shows the details.
+    (rightGroup?.badge || rightGroup?.quota?.length) &&
+    (rightGroup.model || rightGroup.effort)
+      ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, STATUS_RIGHT_GROUP_GAP)
+      : null,
+    ...(rightGroup?.quota ? renderStatusQuota(rightGroup.quota, options.onStatusQuotaMouseDown) : []),
+    rightGroup?.quota?.length && (rightGroup.compact || rightGroup.badge)
       ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, STATUS_RIGHT_GROUP_GAP)
       : null,
     // Local patch (status-compact-button): clickable compact glyph right before
@@ -562,7 +609,64 @@ type StatusRightGroupParts = {
   effort: string | undefined;
   memory: string | undefined;
   model: string | undefined;
+  // Local patch (account-quota-indicator).
+  quota: AccountQuotaPart[] | undefined;
 };
+
+// Local patch (account-quota-indicator): the color follows how full the pool is.
+function accountQuotaColor(level: AccountQuotaLevel): string {
+  if (level === "danger") return palette.danger;
+  if (level === "warning") return palette.warning;
+  return palette.muted;
+}
+
+function statusQuotaWidth(parts: AccountQuotaPart[]): number {
+  return parts.reduce(
+    (width, part, index) =>
+      width + displayWidth(part.label) + (index > 0 ? displayWidth(STATUS_QUOTA_SEPARATOR) : 0),
+    0,
+  );
+}
+
+function statusQuotaRank(part: AccountQuotaPart): number {
+  return part.level === "danger" ? 2 : part.level === "warning" ? 1 : 0;
+}
+
+// The segment keeps its place longer than the model and the effort. When it no
+// longer fits whole, only the fuller pool stays (the one worth watching).
+function fitStatusQuota(
+  parts: AccountQuotaPart[] | undefined,
+  maxWidth: number,
+): AccountQuotaPart[] | undefined {
+  if (!parts || parts.length === 0) return undefined;
+  if (statusQuotaWidth(parts) <= maxWidth) return parts;
+  const fullest = parts.reduce((best, part) => (statusQuotaRank(part) > statusQuotaRank(best) ? part : best));
+  return displayWidth(fullest.label) <= maxWidth ? [fullest] : undefined;
+}
+
+function renderStatusQuota(
+  parts: AccountQuotaPart[],
+  onMouseDown: StatusMouseHandler | undefined,
+): React.ReactElement[] {
+  return parts.flatMap((part, index) => {
+    const nodes: React.ReactElement[] = [];
+    if (index > 0) {
+      nodes.push(h("text", { style: { fg: palette.muted, flexShrink: 0 } }, STATUS_QUOTA_SEPARATOR));
+    }
+    nodes.push(
+      h(
+        "text",
+        {
+          onMouseDown: (event: { preventDefault: () => void; stopPropagation: () => void }) =>
+            triggerStatusMouseHandler(event, onMouseDown),
+          style: { fg: accountQuotaColor(part.level), flexShrink: 0 },
+        },
+        part.label,
+      ),
+    );
+    return nodes;
+  });
+}
 
 // Local patch (process-memory-indicator): "ram <working set> · commit <commit
 // size>"; the half that could not be read is omitted.
@@ -593,6 +697,8 @@ function statusRightGroupParts(options: InputActiveStatusOptions): StatusRightGr
     effort: (options.thoughtLevel ?? "").trim() || undefined,
     // Local patch (process-memory-indicator).
     memory: options.processMemory ? processMemoryStatusLabel(options.processMemory) : undefined,
+    // Local patch (account-quota-indicator).
+    quota: options.accountQuota && options.accountQuota.parts.length > 0 ? options.accountQuota.parts : undefined,
     model:
       model && model !== UNKNOWN_MODEL_FIELD && model.toLowerCase() !== "unknown"
         ? model
@@ -621,10 +727,17 @@ function fitStatusRightGroup(
   if (compact && STATUS_COMPACT_GLYPH_WIDTH > remaining) compact = undefined;
   if (compact) remaining -= STATUS_COMPACT_GLYPH_WIDTH;
 
+  // Local patch (account-quota-indicator): the quota comes right after the
+  // badge and the compact glyph and yields to them only; the model and the
+  // effort, which precede it in the row, get what is left.
+  const quotaLeads = Boolean(badge || compact);
+  const quota = fitStatusQuota(parts.quota, quotaLeads ? remaining - gapWidth : remaining);
+  if (quota) remaining -= statusQuotaWidth(quota) + (quotaLeads ? gapWidth : 0);
+
   if (parts.model || parts.effort) {
-    if (badge || compact) remaining -= gapWidth;
+    if (badge || compact || quota) remaining -= gapWidth;
     if (remaining < STATUS_MIN_CONTEXT_WIDTH) {
-      return withStatusMemory({ badge, compact }, parts.memory, 0);
+      return withStatusMemory({ badge, compact, quota }, parts.memory, 0);
     }
 
     const modelWidth = parts.model ? displayWidth(parts.model) : 0;
@@ -633,7 +746,7 @@ function fitStatusRightGroup(
     const groupWidth = modelWidth + separatorCount * separatorWidth + effortWidth;
     if (groupWidth <= remaining) {
       return withStatusMemory(
-        { badge, compact, model: parts.model, effort: parts.effort },
+        { badge, compact, model: parts.model, effort: parts.effort, quota },
         parts.memory,
         remaining - groupWidth,
       );
@@ -644,7 +757,7 @@ function fitStatusRightGroup(
       const model = truncateDisplay(parts.model, remaining);
       const fitted = displayWidth(model) > 0 ? model : undefined;
       return withStatusMemory(
-        { badge, compact, model: fitted },
+        { badge, compact, model: fitted, quota },
         parts.memory,
         remaining - displayWidth(fitted ?? ""),
       );
@@ -653,13 +766,13 @@ function fitStatusRightGroup(
       const effort = truncateDisplay(parts.effort, remaining);
       const fitted = displayWidth(effort) > 0 ? effort : undefined;
       return withStatusMemory(
-        { badge, compact, effort: fitted },
+        { badge, compact, effort: fitted, quota },
         parts.memory,
         remaining - displayWidth(fitted ?? ""),
       );
     }
   }
-  return withStatusMemory({ badge, compact }, parts.memory, remaining);
+  return withStatusMemory({ badge, compact, quota }, parts.memory, remaining);
 }
 
 // Local patch (process-memory-indicator): the memory segment has the lowest
@@ -694,9 +807,24 @@ function fitStatusNotice(notice: StatusNotice, maxWidth?: number): StatusNoticeP
   let text = notice.text;
   if (text) {
     if (command) remaining -= displayWidth(STATUS_NOTICE_COMMAND_GAP);
-    text = remaining > 0 ? truncateDisplay(text, remaining) : "";
+    text = remaining > 0 ? fitStatusNoticeText(text, remaining) : "";
   }
   return { command: command || undefined, text: text || undefined };
+}
+
+// Local patch (account-quota-indicator): a notice of clauses ("week 74% ... ·
+// 5h 10% ... · Max, renews 07.12") loses whole clauses from the end while it
+// does not fit, so the line never ends in a cut number; a single clause is
+// shortened like any text.
+function fitStatusNoticeText(text: string, maxWidth: number): string {
+  const clauses = text.split(STATUS_NOTICE_CLAUSE_SEPARATOR);
+  while (
+    clauses.length > 1 &&
+    displayWidth(clauses.join(STATUS_NOTICE_CLAUSE_SEPARATOR)) > maxWidth
+  ) {
+    clauses.pop();
+  }
+  return truncateDisplay(clauses.join(STATUS_NOTICE_CLAUSE_SEPARATOR), maxWidth);
 }
 
 function statusNoticeWidth(parts: StatusNoticeParts | undefined): number {

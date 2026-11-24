@@ -121,6 +121,13 @@ export type SlashCommand =
       rawName: string;
       type: "known";
     }
+  // Local patch (account-quota-indicator).
+  | {
+      args: string;
+      name: "usage";
+      rawName: string;
+      type: "known";
+    }
   | {
       args: string;
       rawName: string;

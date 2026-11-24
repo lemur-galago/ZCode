@@ -12,7 +12,7 @@ import { createTuiPermissionRequester } from "./app-permission.js";
 import { appendAgentResult } from "./app-submit.js";
 import { useSubmitValue } from "./app-submit-controller.js";
 import { filterSlashCommands, reconcileSlashSelection } from "./app-input.js";
-import { modelOptionValue } from "./app-model-ref.js";
+import { modelDisplayParts, modelOptionValue, UNKNOWN_MODEL_FIELD } from "./app-model-ref.js";
 import { useEffortCommandController } from "./app-effort-command.js";
 import { useInputHistory } from "./app-input-history.js";
 import { type StatusNotice } from "./app-input-status.js";
@@ -23,6 +23,12 @@ import {
   processMemoryNotice,
   useProcessMemory,
 } from "./app-process-memory.js";
+// Local patch (account-quota-indicator).
+import {
+  accountQuotaNotice,
+  accountQuotaPendingNotice,
+  useAccountQuota,
+} from "./app-account-quota.js";
 import {
   createDirectoryPickerGate,
   isDirectoryPickerSupported,
@@ -491,21 +497,52 @@ export function TuiApp({
   const processMemory = useProcessMemory({ read: options.readProcessMemory });
   const [statusNotice, setStatusNotice] = useState<StatusNotice | undefined>(undefined);
   const statusNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Local patch (account-quota-indicator): the segment whose notice is shown.
+  const statusNoticeOwnerRef = useRef<"memory" | "quota" | undefined>(undefined);
   useEffect(
     () => () => {
       if (statusNoticeTimerRef.current) clearTimeout(statusNoticeTimerRef.current);
     },
     [],
   );
-  const showStatusMemoryNotice = useCallback(() => {
-    if (subagents.selected) return;
+  // Shows a notice for a while; a newer one replaces the one shown.
+  const showStatusNotice = useCallback((owner: "memory" | "quota", notice: StatusNotice) => {
     if (statusNoticeTimerRef.current) clearTimeout(statusNoticeTimerRef.current);
+    statusNoticeOwnerRef.current = owner;
     statusNoticeTimerRef.current = setTimeout(() => {
       statusNoticeTimerRef.current = undefined;
+      statusNoticeOwnerRef.current = undefined;
       setStatusNotice(undefined);
     }, STATUS_NOTICE_DURATION_MS);
-    setStatusNotice(processMemoryNotice(options.getMainSessionId?.()));
-  }, [options.getMainSessionId, subagents.selected]);
+    setStatusNotice(notice);
+  }, []);
+  const showStatusMemoryNotice = useCallback(() => {
+    if (subagents.selected) return;
+    showStatusNotice("memory", processMemoryNotice(options.getMainSessionId?.()));
+  }, [options.getMainSessionId, showStatusNotice, subagents.selected]);
+
+  // Local patch (account-quota-indicator): used quota of the Coding Plan
+  // account in the status row. A click shows the details as a notice and asks
+  // for a fresh read; while that notice is shown it follows the quota.
+  const quotaProvider = modelDisplayParts(model).provider;
+  const accountQuota = useAccountQuota({
+    providerId: quotaProvider === UNKNOWN_MODEL_FIELD ? undefined : quotaProvider,
+    read: options.readAccountQuota,
+  });
+  const showStatusQuotaNotice = useCallback(() => {
+    if (subagents.selected) return;
+    showStatusNotice(
+      "quota",
+      accountQuota.usage ? accountQuotaNotice(accountQuota.usage) : accountQuotaPendingNotice(),
+    );
+    accountQuota.refresh();
+  }, [accountQuota, showStatusNotice, subagents.selected]);
+  useEffect(() => {
+    if (statusNoticeOwnerRef.current !== "quota") return;
+    setStatusNotice(
+      accountQuota.usage ? accountQuotaNotice(accountQuota.usage) : accountQuotaPendingNotice(),
+    );
+  }, [accountQuota.usage]);
 
   useTuiKeyboardControls({
     readOnlyView: subagents.selected ? { back: subagents.back } : undefined,
@@ -589,6 +626,9 @@ export function TuiApp({
     processMemory,
     statusNotice,
     onStatusMemoryClick: showStatusMemoryNotice,
+    // Local patch (account-quota-indicator).
+    accountQuota: accountQuota.usage,
+    onStatusQuotaClick: showStatusQuotaNotice,
     onStatusAddDirClick: openStatusDirPicker,
     onStatusDirClick: submitStatusDirList,
     slashCommands: filteredSlashCommands,

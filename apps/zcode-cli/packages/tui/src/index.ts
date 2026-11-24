@@ -1,5 +1,8 @@
 export { runTui } from "./tui.js";
 export type {
+  AccountQuotaSnapshot,
+  AccountQuotaWindow,
+  AccountQuotaWindowKind,
   TuiClipboardImage,
   TuiImageMediaType,
   TuiListMcpServers,
@@ -14,6 +17,7 @@ export type {
   TuiPromptInput,
   TuiRecallPreviousInput,
   TuiReadClipboardImage,
+  TuiReadAccountQuota,
   TuiReadSubagents,
   TuiReadSubagentTranscript,
   TuiSubagentTranscriptSnapshot,

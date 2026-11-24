@@ -67,6 +67,17 @@ export function parseSlashCommand(input: string): SlashCommand | null {
     };
   }
 
+  // Local patch (account-quota-indicator): local command — prints the used
+  // share of the Coding Plan credit pools instead of sending a model prompt.
+  if (rawName === "usage") {
+    return {
+      args,
+      name: "usage",
+      rawName,
+      type: "known",
+    };
+  }
+
   if (rawName === "expert") {
     return {
       args,

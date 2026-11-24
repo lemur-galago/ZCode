@@ -53,6 +53,17 @@ export const BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES: readonly BuiltinZCodeSlas
     usage: "/adddir <directory>",
   },
   {
+    // Local patch (account-quota-indicator): local command; reads the Coding
+    // Plan account with the provider's API key and sends no model prompt.
+    details: [
+      "Shows how much of the 5-hour and the weekly credit pools of the Coding Plan account is used, with the credits behind it, the reset times and the plan.",
+      "Works during a running turn. The status row above the composer shows the same numbers at a glance.",
+    ],
+    name: "usage",
+    summary: "Show the Coding Plan quota usage.",
+    usage: "/usage",
+  },
+  {
     details: [
       "Runs a normal agent turn that inspects the current workspace and creates or updates AGENTS.md.",
       "Existing AGENTS.md files should be edited rather than overwritten.",

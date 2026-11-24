@@ -5,6 +5,8 @@ import {
 } from "../command-center-custom.js";
 import { formatNewSessionResult, formatResumeResult } from "./formatters.js";
 import { handleAddDirCommand } from "./handlers/adddir.js";
+// Local patch (account-quota-indicator).
+import { handleUsageCommand } from "./handlers/usage.js";
 import { handleCustomCommand } from "./handlers/custom.js";
 import { handleDwfCommand } from "./handlers/dwf.js";
 import { handleEffortCommand } from "./handlers/effort.js";
@@ -211,6 +213,15 @@ export function createCommandCenter(deps: CommandCenterDeps): TuiSubmitPrompt {
       // no model turn, the wired dep updates the live runtime config.
       if (command.name === "adddir") {
         return handleAddDirCommand(command.args, deps);
+      }
+
+      // Local patch (account-quota-indicator): the plan usage report, read from
+      // the account by the wired reader — no model turn.
+      if (command.name === "usage") {
+        if (command.args.length > 0) {
+          return { mode: deps.getMode?.(), response: "Usage: /usage" };
+        }
+        return handleUsageCommand(deps);
       }
 
       if (command.name === "init") {

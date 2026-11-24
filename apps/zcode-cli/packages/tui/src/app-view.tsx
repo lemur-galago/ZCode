@@ -1,5 +1,6 @@
 import type { ModelUsageSummary, TodoItem, TurnId } from "@zcode/contracts";
 import React from "react";
+import type { AccountQuotaUsage } from "./app-account-quota.js";
 import { ApprovalArea } from "./app-approval-panel.js";
 import {
   actionPanelContentWidthForTerminal,
@@ -86,6 +87,10 @@ export function AppView(props: {
   processMemory?: ProcessMemoryUsage;
   statusNotice?: StatusNotice;
   onStatusMemoryClick?: () => void;
+  // Local patch (account-quota-indicator): the account quota shown in the
+  // status row and the handler a click on it wakes.
+  accountQuota?: AccountQuotaUsage;
+  onStatusQuotaClick?: () => void;
   // Local patch (adddir-command): click handlers for the composer folder
   // badge — "➕" opens the native folder picker, the folder name lists the directories.
   onStatusAddDirClick?: () => void;
@@ -250,6 +255,9 @@ export function AppView(props: {
               processMemory: props.processMemory,
               statusNotice: props.statusNotice,
               onStatusMemoryClick: readOnly ? undefined : props.onStatusMemoryClick,
+              // Local patch (account-quota-indicator).
+              accountQuota: props.accountQuota,
+              onStatusQuotaClick: readOnly ? undefined : props.onStatusQuotaClick,
               onStatusAddDirClick: readOnly ? undefined : props.onStatusAddDirClick,
               onStatusDirClick: readOnly ? undefined : props.onStatusDirClick,
               queuedInputs,
@@ -296,6 +304,10 @@ export function ComposerInputArea(props: {
   processMemory?: ProcessMemoryUsage;
   statusNotice?: StatusNotice;
   onStatusMemoryClick?: () => void;
+  // Local patch (account-quota-indicator): the account quota shown in the
+  // status row and the handler a click on it wakes.
+  accountQuota?: AccountQuotaUsage;
+  onStatusQuotaClick?: () => void;
   // Local patch (adddir-command): click handlers for the composer folder
   // badge — "➕" opens the native folder picker, the folder name lists the directories.
   onStatusAddDirClick?: () => void;
@@ -407,6 +419,11 @@ export function ComposerInputArea(props: {
       processMemory: props.processMemory,
       onStatusMemoryMouseDown: props.onStatusMemoryClick
         ? () => props.onStatusMemoryClick?.()
+        : undefined,
+      // Local patch (account-quota-indicator).
+      accountQuota: props.accountQuota,
+      onStatusQuotaMouseDown: props.onStatusQuotaClick
+        ? () => props.onStatusQuotaClick?.()
         : undefined,
     }),
   );
