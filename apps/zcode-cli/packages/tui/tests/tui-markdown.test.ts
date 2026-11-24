@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import React, { act } from "react";
+import { testRender } from "@mbears/opentui-react/test-utils";
 import { MessageRow } from "../src/app-transcript-components.js";
 import { palette } from "../src/app-model.js";
 import { detectMarkdownRenderMode, MarkdownText } from "../src/app-markdown.js";
 import { markdownSyntaxRules } from "../src/app-markdown-theme.js";
-import { DARK_TUI_THEME, setActiveTuiThemeMode } from "../src/theme/index.js";
+import { DARK_TUI_THEME, LIGHT_TUI_THEME, setActiveTuiThemeMode } from "../src/theme/index.js";
 
 test("detects the best available markdown render mode", () => {
   assert.equal(
@@ -39,6 +41,64 @@ test("uses OpenTUI native markdown when available", () => {
   assert.equal(node.props.conceal, true);
   assert.equal(node.props.streaming, true);
   assert.ok(node.props.syntaxStyle);
+});
+
+test("gives the markdown element the theme text color", () => {
+  // Local patch (markdown-code-block-foreground): a fenced block in a language
+  // without a bundled tree-sitter grammar (bash, python, ...) has no highlights
+  // and is drawn as plain text. Without an explicit fg OpenTUI falls back to
+  // its own default foreground, white, which is invisible on the light theme.
+  const content = "```bash\necho hi\n```";
+  const dark = MarkdownText({ content, mode: "markdown" });
+  assert.equal(dark.props.fg, DARK_TUI_THEME.markdownText);
+
+  setActiveTuiThemeMode("light");
+  try {
+    const light = MarkdownText({ content, mode: "markdown" });
+    assert.equal(light.props.fg, LIGHT_TUI_THEME.markdownText);
+  } finally {
+    setActiveTuiThemeMode("dark");
+  }
+});
+
+test("draws a bash code block in the theme text color on the light theme", async () => {
+  // Local patch (markdown-code-block-foreground): the defect only shows in a
+  // real render - the block was white on the light background.
+  setActiveTuiThemeMode("light");
+  let view: Awaited<ReturnType<typeof testRender>> | undefined;
+  try {
+    await act(async () => {
+      view = await testRender(
+        React.createElement(MessageRow, {
+          index: 0,
+          message: {
+            content: 'Run this:\n\n```bash\necho "hello world"\n```\n',
+            role: "agent",
+          },
+          terminalWidth: 100,
+        }),
+        { height: 20, width: 100 },
+      );
+    });
+    let codeSpan: { text: string; fg: { toInts(): number[] } } | undefined;
+    for (let attempt = 0; attempt < 80 && !codeSpan; attempt += 1) {
+      await act(async () => {
+        await sleep(25);
+        await view?.renderOnce();
+      });
+      codeSpan = view
+        ?.captureSpans()
+        .lines.flatMap((line) => line.spans)
+        .find((span) => span.text.includes("hello world"));
+    }
+    assert.ok(codeSpan, "the code line is rendered");
+    assert.equal(colorHex(codeSpan.fg), LIGHT_TUI_THEME.markdownText);
+  } finally {
+    await act(async () => {
+      view?.renderer.destroy();
+    });
+    setActiveTuiThemeMode("dark");
+  }
 });
 
 test("keeps one syntax style object across renders of unchanged theme", () => {
@@ -157,6 +217,16 @@ test("message rows keep user and explicit plain text parts unformatted", () => {
   assert.ok(collectTextLines(userRow).some((line) => line.includes("Show `raw` markdown")));
   assert.ok(collectTextLines(partRow).includes("**plain**"));
 });
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function colorHex(color: { toInts(): number[] }): string {
+  return `#${color
+    .toInts()
+    .slice(0, 3)
+    .map((part) => part.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
 
 function collectTextLines(node: unknown): string[] {
   const lines: string[] = [];

@@ -71,6 +71,12 @@ export function MarkdownText({
       return h("markdown", {
         conceal: true,
         content: safeContent,
+        // Local patch (markdown-code-block-foreground): a fenced block in a
+        // language without a bundled tree-sitter grammar (bash, python, ...)
+        // gets no highlights, and OpenTUI draws such plain text in its own
+        // default foreground, which is white. That is invisible on the light
+        // theme, so give the markdown element the theme text color.
+        fg: textColor,
         streaming,
         syntaxStyle,
       });
