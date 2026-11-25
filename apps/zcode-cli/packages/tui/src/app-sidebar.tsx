@@ -11,6 +11,17 @@ import { ApiSection } from "./app-sidebar-api.js";
 import { sidebarFoldRow, visibleSidebarRowCount } from "./app-sidebar-fold.js";
 import { McpSection } from "./app-sidebar-mcp.js";
 import { ModifiedFilesSection } from "./app-sidebar-modified-files.js";
+import {
+  SIDEBAR_SCROLLBAR_ID,
+  SIDEBAR_SCROLLBAR_WIDTH,
+  drawSidebarScrollbar,
+  sidebarScrollbarDrag,
+  sidebarScrollbarMouseDown,
+  sidebarScrollbarMove,
+  sidebarScrollbarMouseUp,
+  sidebarScrollbarScroll,
+  trackSidebarScroller,
+} from "./app-sidebar-scrollbar.js";
 import { SidebarSectionHeader } from "./app-sidebar-section-header.js";
 import { SubagentsSection } from "./app-sidebar-subagents.js";
 import type { SubagentItem, SubagentsController } from "./app-subagents.js";
@@ -37,6 +48,9 @@ const SIDEBAR_LABEL_WIDTH = 9;
 const SIDEBAR_ROW_VALUE_WIDTH = SIDEBAR_CONTENT_WIDTH - SIDEBAR_LABEL_WIDTH - 1;
 const SIDEBAR_TODO_CONTENT_WIDTH = SIDEBAR_CONTENT_WIDTH - 4;
 const SIDEBAR_TODO_ROW_LIMIT = 6;
+// Local patch (sidebar-scrollbar): the workspace footer is one row; the
+// scrollbar column ends above it.
+const SIDEBAR_FOOTER_ROWS = 1;
 const SIDEBAR_TEXT_ROW_STYLE = { flexShrink: 0, height: 1, truncate: true, wrapMode: "none" };
 const PRODUCT_NAME = "ZCode";
 const PRODUCT_NAME_WIDTH = displayWidth(PRODUCT_NAME);
@@ -74,12 +88,8 @@ export function Sidebar(props: SidebarProps): React.ReactElement {
         flexShrink: 0,
         height: "100%",
         // Local patch (sidebar-scroll): the sections scroll and the workspace
-        // footer stays pinned. The scrollbar takes the right padding column,
-        // so the rows keep their width while it is shown.
-        paddingBottom: SIDEBAR_HORIZONTAL_PADDING_COLUMNS,
-        paddingLeft: SIDEBAR_HORIZONTAL_PADDING_COLUMNS,
-        paddingRight: 0,
-        paddingTop: SIDEBAR_HORIZONTAL_PADDING_COLUMNS,
+        // footer stays pinned.
+        padding: SIDEBAR_HORIZONTAL_PADDING_COLUMNS,
         width: SIDEBAR_WIDTH,
       },
     },
@@ -89,15 +99,15 @@ export function Sidebar(props: SidebarProps): React.ReactElement {
         id: SIDEBAR_SCROLLBOX_ID,
         focused: false,
         scrollX: false,
+        // Local patch (sidebar-scrollbar): the ref hides the stock slider; the
+        // column next to this element draws the thumb instead.
+        ref: trackSidebarScroller,
         // No explicit width or height here: OpenTUI makes a sized box rigid
         // (flexShrink 0), and the box must shrink to the space the footer
         // leaves. It stretches to the inner width of the sidebar instead.
         style: {
           flexGrow: 1,
           minHeight: 0,
-          scrollbarOptions: {
-            trackOptions: { backgroundColor: palette.panelAlt, foregroundColor: palette.muted },
-          },
         },
       },
       h(
@@ -160,6 +170,29 @@ export function Sidebar(props: SidebarProps): React.ReactElement {
           : []),
       ),
     ),
+    // Local patch (sidebar-scrollbar): the thumb of the sidebar, in the right
+    // padding column. It is positioned over the padding on purpose: the scroll
+    // box above must stay without a size (see there), and this way the column
+    // covers no part of it. It ends where the footer begins.
+    h("box", {
+      id: SIDEBAR_SCROLLBAR_ID,
+      key: "sidebar-scrollbar",
+      onMouseDown: sidebarScrollbarMouseDown,
+      onMouseDrag: sidebarScrollbarDrag,
+      onMouseMove: sidebarScrollbarMove,
+      onMouseUp: sidebarScrollbarMouseUp,
+      onMouseScroll: sidebarScrollbarScroll,
+      renderAfter: drawSidebarScrollbar,
+      selectable: false,
+      style: {
+        bottom: SIDEBAR_HORIZONTAL_PADDING_COLUMNS + SIDEBAR_FOOTER_ROWS,
+        position: "absolute",
+        right: 0,
+        top: SIDEBAR_HORIZONTAL_PADDING_COLUMNS,
+        width: SIDEBAR_SCROLLBAR_WIDTH,
+      },
+      thumbColor: palette.muted,
+    }),
     // Local patch (adddir-command): the always-visible workspace footer gets a
     // clickable "➕" pinned to its right edge (opens the folder picker, same as the
     // composer-status badge) and shows the additional-directory count.

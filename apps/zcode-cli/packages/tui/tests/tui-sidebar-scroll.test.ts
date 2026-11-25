@@ -26,8 +26,8 @@ const actEnvironment = globalThis as typeof globalThis & ActEnvironment;
 const NARROW = 56;
 const DOCKED: SidebarLayout = { overlay: false, reservedWidth: SIDEBAR_WIDTH, visible: true, wide: true };
 const OVERLAY: SidebarLayout = { overlay: true, reservedWidth: 0, visible: true, wide: false };
-const THUMB = /[\u2580\u2584\u2588]/;
-const END_OF_FILE_ROW = / -10(?: |[\u2580\u2584\u2588])?$/;
+// The scrollbar column is one cell of the padding: the rows keep their last column.
+const END_OF_FILE_ROW = / -10 ?$/;
 
 test("a click on '+N more' unfolds the list, a click on the way back folds it", async () => {
   const screen = await showSidebar({ height: 24, state: sidebarState({ mcpStatus: mcp(7) }) });
@@ -57,7 +57,7 @@ test("the sidebar scrolls above the pinned footer instead of being cut off", asy
     assert.ok(rows.some((line) => line.includes("E:\\LSF")));
     assert.ok(rows.some((line) => line.includes("ZCode")));
     assert.equal(rows.some((line) => line.includes("Todos")), false);
-    assert.ok(rows.some((line) => THUMB.test(line)));
+    assert.ok(screen.isScrollable());
 
     // A wheel turn over the sidebar moves the sections; the footer stays.
     await screen.wheel(9);
@@ -65,7 +65,7 @@ test("the sidebar scrolls above the pinned footer instead of being cut off", asy
     assert.equal(screen.rows().some((line) => line.includes("ZCode")), false);
     assert.ok(screen.rows().some((line) => line.includes("Todos")));
     assert.ok(screen.rows().some((line) => line.includes("E:\\LSF")));
-    // The scrollbar took the right padding column: the rows are not truncated.
+    // The scrollbar lives in the right padding column: the rows are not truncated.
     assert.ok(screen.rows().some((line) => END_OF_FILE_ROW.test(line)));
 
     await screen.wheel(-9);
@@ -79,7 +79,7 @@ test("the sidebar scrolls above the pinned footer instead of being cut off", asy
 test("a sidebar that fits shows no scrollbar and does not move", async () => {
   const screen = await showSidebar({ height: 44, state: sidebarState({ mcpStatus: mcp(6) }) });
   try {
-    assert.equal(screen.rows().some((line) => THUMB.test(line)), false);
+    assert.equal(screen.isScrollable(), false);
     const before = screen.rows();
 
     await screen.wheel(3);
@@ -283,6 +283,7 @@ async function show(
 ): Promise<{
   click: (text: string) => Promise<void>;
   close: () => Promise<void>;
+  isScrollable: () => boolean;
   rowOf: (text: string) => number;
   rows: () => string[];
   scrollToRow: (text: string, targetRow?: number) => Promise<void>;
@@ -328,6 +329,10 @@ async function show(
         view?.renderer.destroy();
       });
       actEnvironment.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+    },
+    isScrollable: () => {
+      const sidebar = box(view, "sidebar-scroll");
+      return sidebar.scrollHeight > sidebar.viewport.height;
     },
     rowOf,
     rows: frame,
