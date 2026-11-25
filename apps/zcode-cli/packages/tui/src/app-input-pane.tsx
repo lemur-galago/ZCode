@@ -43,6 +43,11 @@ export const PROMPT_TEXTAREA_KEY_BINDINGS = [
   { name: "return", meta: true, action: "newline" },
   { name: "return", shift: true, action: "newline" },
   { name: "linefeed", shift: true, action: "newline" },
+  // Local patch (composer-select-all): OpenTUI maps Ctrl+A to the emacs
+  // "start of the line" and selects the whole buffer on Cmd+A only, which no
+  // Windows or Linux terminal has. Ctrl+A selects the unsent draft; Home
+  // still goes to the start of the line.
+  { name: "a", ctrl: true, action: "select-all" },
 ] as const;
 
 export type PromptInputEditor = Pick<

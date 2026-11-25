@@ -42,6 +42,8 @@ test("prompt textarea binds Enter to submit and Shift+Enter, Ctrl+J, Alt+Enter t
     { name: "return", meta: true, action: "newline" },
     { name: "return", shift: true, action: "newline" },
     { name: "linefeed", shift: true, action: "newline" },
+    // Local patch (composer-select-all): Ctrl+A selects the unsent draft.
+    { name: "a", ctrl: true, action: "select-all" },
   ]);
 });
 
