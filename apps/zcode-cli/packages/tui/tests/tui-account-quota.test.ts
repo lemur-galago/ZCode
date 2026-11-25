@@ -803,9 +803,12 @@ test("clicking the quota shows the details as a notice and asks for a fresh read
     assert.equal(rows.some((line) => line.includes("week 74% · 5h 10%")), false);
     assert.equal(reader.state.calls, 2);
 
-    // The notice follows the fresh numbers.
+    // The notice follows the fresh numbers. The reset times stay on the real
+    // clock this test runs on: a window whose reset lies in the past is not shown.
+    const [week, fiveHours] = live.windows;
+    assert.ok(week && fiveHours);
     await act(async () => {
-      reader.release({ ...live, windows: [{ ...WEEK, usedPercent: 92 }, FIVE_HOURS] });
+      reader.release({ ...live, windows: [{ ...week, usedPercent: 92 }, fiveHours] });
       await sleep(25);
     });
     rows = await frameRows();
