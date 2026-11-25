@@ -111,7 +111,12 @@ export function applySessionEventToState(
       handlers.setStatus(copy.status.modelCalling);
       break;
     case SessionEventType.ModelSelected:
-      applyModelSelectedEvent(payload, handlers.setModel, handlers.setThoughtLevel);
+      applyModelSelectedEvent(
+        payload,
+        handlers.setModel,
+        handlers.setThoughtLevel,
+        handlers.setContextUsage,
+      );
       break;
     case SessionEventType.ModelStreaming:
       applyModelStreamingEvent(payload, {
@@ -332,11 +337,23 @@ function applySessionCreatedEvent(
   }));
 }
 
+// Local patch (context-window-first-turn): the event carries the context
+// window the runtime applies to the selected model. Reading only the model
+// name here left the badge without its total ("165K" instead of
+// "165K / 1M (17%)") for the whole first turn of a fresh session: the
+// projection of the turn result was the first place the window came from. A
+// missing, null or non-positive window keeps the known one, as the projection
+// reducer does.
 function applyModelSelectedEvent(
   payload: Record<string, unknown>,
   setModel: (model: string) => void,
   setThoughtLevel?: (level: string) => void,
+  setContextUsage?: React.Dispatch<React.SetStateAction<ContextUsage>>,
 ): void {
+  const contextWindow = contextWindowFromPayload(payload);
+  if (contextWindow !== undefined && contextWindow > 0) {
+    setContextUsage?.((current) => ({ ...current, contextWindow }));
+  }
   const modelSelection = asRecord(payload.modelSelection);
   const providerId = stringField(modelSelection, "providerId");
   const modelId =
