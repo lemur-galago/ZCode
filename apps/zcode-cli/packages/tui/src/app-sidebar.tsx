@@ -8,6 +8,7 @@ import { modelDisplayParts } from "./app-model-ref.js";
 import { displayWidth, truncateDisplay } from "./app-terminal-width.js";
 import { formatNumber } from "./state.js";
 import { ApiSection } from "./app-sidebar-api.js";
+import { sidebarFoldRow, visibleSidebarRowCount } from "./app-sidebar-fold.js";
 import { McpSection } from "./app-sidebar-mcp.js";
 import { ModifiedFilesSection } from "./app-sidebar-modified-files.js";
 import { SidebarSectionHeader } from "./app-sidebar-section-header.js";
@@ -16,7 +17,10 @@ import type { SubagentItem, SubagentsController } from "./app-subagents.js";
 import {
   SIDEBAR_CONTENT_WIDTH,
   SIDEBAR_HORIZONTAL_PADDING_COLUMNS,
+  SIDEBAR_SCROLLBOX_ID,
   SIDEBAR_WIDTH,
+  type SidebarListExpansion,
+  type SidebarListId,
   type SidebarSectionId,
   type SidebarSectionExpansion,
 } from "./app-sidebar-layout.js";
@@ -32,13 +36,14 @@ const h = React.createElement as (
 const SIDEBAR_LABEL_WIDTH = 9;
 const SIDEBAR_ROW_VALUE_WIDTH = SIDEBAR_CONTENT_WIDTH - SIDEBAR_LABEL_WIDTH - 1;
 const SIDEBAR_TODO_CONTENT_WIDTH = SIDEBAR_CONTENT_WIDTH - 4;
+const SIDEBAR_TODO_ROW_LIMIT = 6;
 const SIDEBAR_TEXT_ROW_STYLE = { flexShrink: 0, height: 1, truncate: true, wrapMode: "none" };
 const PRODUCT_NAME = "ZCode";
 const PRODUCT_NAME_WIDTH = displayWidth(PRODUCT_NAME);
 const DEFAULT_PRODUCT_VERSION = "0.0.0";
 const DEFAULT_MCP_STATUS = { loading: false, servers: {} };
 
-type SidebarProps = SidebarState & {
+export type SidebarProps = SidebarState & {
   subagents?: SubagentsController;
   onOpenSubagent?: (item: SubagentItem) => void;
   copy?: TuiCopy;
@@ -50,6 +55,10 @@ type SidebarProps = SidebarState & {
   // add-directory trigger ("➕" pinned to the row's right edge).
   onAddDirClick?: () => void;
   additionalDirectoryCount?: number;
+  // Local patch (sidebar-fold): which folded lists ("+N more") are unfolded,
+  // and the handler a click on such a row wakes.
+  listExpansion?: Partial<SidebarListExpansion>;
+  onToggleList?: (list: SidebarListId) => void;
 };
 
 export function Sidebar(props: SidebarProps): React.ReactElement {
@@ -64,60 +73,93 @@ export function Sidebar(props: SidebarProps): React.ReactElement {
         flexDirection: "column",
         flexShrink: 0,
         height: "100%",
-        padding: SIDEBAR_HORIZONTAL_PADDING_COLUMNS,
+        // Local patch (sidebar-scroll): the sections scroll and the workspace
+        // footer stays pinned. The scrollbar takes the right padding column,
+        // so the rows keep their width while it is shown.
+        paddingBottom: SIDEBAR_HORIZONTAL_PADDING_COLUMNS,
+        paddingLeft: SIDEBAR_HORIZONTAL_PADDING_COLUMNS,
+        paddingRight: 0,
+        paddingTop: SIDEBAR_HORIZONTAL_PADDING_COLUMNS,
         width: SIDEBAR_WIDTH,
       },
     },
-    productVersionHeader(props.version),
-    ...(developerMode
-      ? [
-          h(
-            "text",
-            { key: "developer-subtitle", style: { ...SIDEBAR_TEXT_ROW_STYLE, fg: palette.muted } },
-            copy.sidebar.shellSubtitle,
-          ),
-        ]
-      : []),
-    sidebarSection(copy.sidebar.sections.status, statusLines(props)),
-    props.subagents
-      ? h(SubagentsSection, {
-          controller: props.subagents,
+    h(
+      "scrollbox",
+      {
+        id: SIDEBAR_SCROLLBOX_ID,
+        focused: false,
+        scrollX: false,
+        // No explicit width or height here: OpenTUI makes a sized box rigid
+        // (flexShrink 0), and the box must shrink to the space the footer
+        // leaves. It stretches to the inner width of the sidebar instead.
+        style: {
+          flexGrow: 1,
+          minHeight: 0,
+          scrollbarOptions: {
+            trackOptions: { backgroundColor: palette.panelAlt, foregroundColor: palette.muted },
+          },
+        },
+      },
+      h(
+        "box",
+        { style: { flexDirection: "column", width: SIDEBAR_CONTENT_WIDTH } },
+        productVersionHeader(props.version),
+        ...(developerMode
+          ? [
+              h(
+                "text",
+                { key: "developer-subtitle", style: { ...SIDEBAR_TEXT_ROW_STYLE, fg: palette.muted } },
+                copy.sidebar.shellSubtitle,
+              ),
+            ]
+          : []),
+        sidebarSection(copy.sidebar.sections.status, statusLines(props)),
+        props.subagents
+          ? h(SubagentsSection, {
+              controller: props.subagents,
+              copy,
+              expanded: props.sectionExpansion?.subagents ?? true,
+              onToggle: () => props.onToggleSection?.("subagents"),
+              onOpen: props.onOpenSubagent ?? props.subagents.open,
+            })
+          : null,
+        ...(developerMode ? [sidebarSection(copy.sidebar.sections.run, runLines(props))] : []),
+        McpSection({
           copy,
-          expanded: props.sectionExpansion?.subagents ?? true,
-          onToggle: () => props.onToggleSection?.("subagents"),
-          onOpen: props.onOpenSubagent ?? props.subagents.open,
-        })
-      : null,
-    ...(developerMode ? [sidebarSection(copy.sidebar.sections.run, runLines(props))] : []),
-    McpSection({
-      copy,
-      expanded: props.sectionExpansion?.mcp ?? true,
-      mcpStatus: props.mcpStatus ?? DEFAULT_MCP_STATUS,
-      onToggle: () => props.onToggleSection?.("mcp"),
-    }),
-    ModifiedFilesSection({
-      copy,
-      expanded: props.sectionExpansion?.modifiedFiles ?? true,
-      files: props.modifiedFiles,
-      onToggle: () => props.onToggleSection?.("modifiedFiles"),
-    }),
-    ...(developerMode ? [sidebarSection(copy.sidebar.sections.context, contextLines(props))] : []),
-    sidebarSection(copy.sidebar.sections.todos, todoLines(props), {
-      expanded: props.sectionExpansion?.todos ?? true,
-      onToggle: () => props.onToggleSection?.("todos"),
-    }),
-    ...(developerMode
-      ? [
-          ApiSection({
-            copy,
-            expanded: props.sectionExpansion?.apis ?? true,
-            networkRequests: props.networkRequests,
-            onToggle: () => props.onToggleSection?.("apis"),
-            usage: props.usage,
-          }),
-        ]
-      : []),
-    h("box", { key: "sidebar-spacer", style: { flexGrow: 1 } }),
+          expanded: props.sectionExpansion?.mcp ?? true,
+          mcpStatus: props.mcpStatus ?? DEFAULT_MCP_STATUS,
+          onToggle: () => props.onToggleSection?.("mcp"),
+          listExpanded: props.listExpansion?.mcp,
+          onToggleList: props.onToggleList && (() => props.onToggleList?.("mcp")),
+        }),
+        ModifiedFilesSection({
+          copy,
+          expanded: props.sectionExpansion?.modifiedFiles ?? true,
+          files: props.modifiedFiles,
+          onToggle: () => props.onToggleSection?.("modifiedFiles"),
+          listExpanded: props.listExpansion?.modifiedFiles,
+          onToggleList: props.onToggleList && (() => props.onToggleList?.("modifiedFiles")),
+        }),
+        ...(developerMode ? [sidebarSection(copy.sidebar.sections.context, contextLines(props))] : []),
+        sidebarSection(copy.sidebar.sections.todos, todoLines(props), {
+          expanded: props.sectionExpansion?.todos ?? true,
+          onToggle: () => props.onToggleSection?.("todos"),
+        }),
+        ...(developerMode
+          ? [
+              ApiSection({
+                copy,
+                expanded: props.sectionExpansion?.apis ?? true,
+                networkRequests: props.networkRequests,
+                onToggle: () => props.onToggleSection?.("apis"),
+                usage: props.usage,
+                listExpanded: props.listExpansion?.apis,
+                onToggleList: props.onToggleList && (() => props.onToggleList?.("apis")),
+              }),
+            ]
+          : []),
+      ),
+    ),
     // Local patch (adddir-command): the always-visible workspace footer gets a
     // clickable "➕" pinned to its right edge (opens the folder picker, same as the
     // composer-status badge) and shows the additional-directory count.
@@ -415,7 +457,9 @@ function todoLines(props: SidebarProps): React.ReactNode[] {
     return lines;
   }
 
-  for (const [index, todo] of props.todos.slice(0, 6).entries()) {
+  for (const [index, todo] of props.todos
+    .slice(0, visibleSidebarRowCount(props.todos.length, SIDEBAR_TODO_ROW_LIMIT, props.listExpansion?.todos))
+    .entries()) {
     lines.push(
       textLine(
         `${todoMarker(todo.status)} ${truncateDisplay(todo.content, SIDEBAR_TODO_CONTENT_WIDTH)}`,
@@ -424,11 +468,14 @@ function todoLines(props: SidebarProps): React.ReactNode[] {
       ),
     );
   }
-  if (props.todos.length > 6) {
-    lines.push(
-      textLine(copy.sidebar.todos.more(props.todos.length - 6), palette.muted, "todo-more"),
-    );
-  }
+  const foldRow = sidebarFoldRow({
+    count: props.todos.length - SIDEBAR_TODO_ROW_LIMIT,
+    expanded: props.listExpansion?.todos,
+    list: "todos",
+    moreLabel: copy.sidebar.todos.more,
+    onToggle: props.onToggleList && (() => props.onToggleList?.("todos")),
+  });
+  if (foldRow) lines.push(foldRow);
   return lines;
 }
 

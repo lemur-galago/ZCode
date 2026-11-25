@@ -3,6 +3,7 @@ import type { TuiCopy } from "@zcode/i18n";
 import React from "react";
 import type { McpSidebarState } from "./app-model.js";
 import { palette } from "./app-model.js";
+import { sidebarFoldRow, visibleSidebarRowCount } from "./app-sidebar-fold.js";
 import { SIDEBAR_CONTENT_WIDTH } from "./app-sidebar-layout.js";
 import { SidebarSectionHeader } from "./app-sidebar-section-header.js";
 import { displayWidth, truncateDisplay } from "./app-terminal-width.js";
@@ -24,8 +25,11 @@ const SIDEBAR_TEXT_ROW_STYLE = { flexShrink: 0, height: 1, truncate: true, wrapM
 export function McpSection(props: {
   copy: TuiCopy;
   expanded: boolean;
+  // Local patch (sidebar-fold): the servers behind the "+N more" row.
+  listExpanded?: boolean;
   mcpStatus: McpSidebarState;
   onToggle?: () => void;
+  onToggleList?: () => void;
 }): React.ReactElement {
   return h(
     "box",
@@ -41,11 +45,15 @@ export function McpSection(props: {
       onToggle: props.onToggle,
       title: props.copy.sidebar.sections.mcp,
     }),
-    ...(props.expanded ? mcpLines(props.copy, props.mcpStatus) : []),
+    ...(props.expanded ? mcpLines(props.copy, props.mcpStatus, props) : []),
   );
 }
 
-function mcpLines(copy: TuiCopy, state: McpSidebarState): React.ReactNode[] {
+function mcpLines(
+  copy: TuiCopy,
+  state: McpSidebarState,
+  list: { listExpanded?: boolean; onToggleList?: () => void },
+): React.ReactNode[] {
   const entries = Object.entries(state.servers).sort(([left], [right]) =>
     left.localeCompare(right),
   );
@@ -74,7 +82,11 @@ function mcpLines(copy: TuiCopy, state: McpSidebarState): React.ReactNode[] {
     return lines;
   }
 
-  for (const [name, status] of entries.slice(0, MCP_SERVER_ROW_LIMIT)) {
+  const shown = entries.slice(
+    0,
+    visibleSidebarRowCount(entries.length, MCP_SERVER_ROW_LIMIT, list.listExpanded),
+  );
+  for (const [name, status] of shown) {
     lines.push(mcpServerLine(copy, name, status));
     if (status.error) {
       lines.push(
@@ -86,15 +98,14 @@ function mcpLines(copy: TuiCopy, state: McpSidebarState): React.ReactNode[] {
       );
     }
   }
-  if (entries.length > MCP_SERVER_ROW_LIMIT) {
-    lines.push(
-      textLine(
-        copy.sidebar.mcp.more(entries.length - MCP_SERVER_ROW_LIMIT),
-        palette.muted,
-        "mcp-more",
-      ),
-    );
-  }
+  const foldRow = sidebarFoldRow({
+    count: entries.length - MCP_SERVER_ROW_LIMIT,
+    expanded: list.listExpanded,
+    list: "mcp",
+    moreLabel: copy.sidebar.mcp.more,
+    onToggle: list.onToggleList,
+  });
+  if (foldRow) lines.push(foldRow);
   if (state.error) {
     lines.push(textLine(copy.sidebar.mcp.loadFailed, palette.warning, "mcp-refresh-error"));
   }

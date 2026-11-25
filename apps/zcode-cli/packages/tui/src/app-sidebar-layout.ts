@@ -7,10 +7,15 @@ export const SIDEBAR_HORIZONTAL_PADDING_COLUMNS = 1;
 export const SIDEBAR_CONTENT_WIDTH = SIDEBAR_WIDTH - SIDEBAR_HORIZONTAL_PADDING_COLUMNS * 2;
 const SIDEBAR_AUTO_VISIBLE_BREAKPOINT = 120;
 export const SIDEBAR_OVERLAY_BACKGROUND = RGBA.fromInts(0, 0, 0, 70);
+// Local patch (sidebar-scroll): the scroll box that carries the sections.
+export const SIDEBAR_SCROLLBOX_ID = "sidebar-scroll";
 
 type SidebarPreference = "auto" | "hidden";
 export type SidebarSectionId = "apis" | "mcp" | "modifiedFiles" | "todos" | "subagents";
 export type SidebarSectionExpansion = Record<SidebarSectionId, boolean>;
+// Local patch (sidebar-fold): the lists that fold their tail behind a "+N more" row.
+export type SidebarListId = "apis" | "mcp" | "modifiedFiles" | "todos";
+export type SidebarListExpansion = Record<SidebarListId, boolean>;
 
 type SidebarControllerState = {
   narrowOverlayOpen: boolean;
@@ -126,4 +131,12 @@ export function toggleSidebarSectionState(
     ...sections,
     [section]: !sections[section],
   };
+}
+
+export function toggleSidebarListExpansion(
+  expansion: SidebarListExpansion,
+  list: SidebarListId,
+): SidebarListExpansion {
+  // sidebar-fold: one list at a time, the other lists keep their state.
+  return { ...expansion, [list]: !expansion[list] };
 }

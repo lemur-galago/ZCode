@@ -2,6 +2,7 @@ import type { TuiCopy } from "@zcode/i18n";
 import React from "react";
 import type { ModifiedFileStat } from "./app-modified-files.js";
 import { palette } from "./app-model.js";
+import { sidebarFoldRow, visibleSidebarRowCount } from "./app-sidebar-fold.js";
 import { SIDEBAR_CONTENT_WIDTH } from "./app-sidebar-layout.js";
 import { SidebarSectionHeader } from "./app-sidebar-section-header.js";
 import { formatNumber, truncatePlain } from "./state.js";
@@ -20,7 +21,10 @@ export function ModifiedFilesSection(props: {
   copy: TuiCopy;
   expanded: boolean;
   files: ModifiedFileStat[];
+  // Local patch (sidebar-fold): the files behind the "+N more" row.
+  listExpanded?: boolean;
   onToggle?: () => void;
+  onToggleList?: () => void;
 }): React.ReactElement {
   return h(
     "box",
@@ -36,28 +40,34 @@ export function ModifiedFilesSection(props: {
       onToggle: props.onToggle,
       title: props.copy.sidebar.sections.modifiedFiles,
     }),
-    ...(props.expanded ? modifiedFileLines(props.copy, props.files) : []),
+    ...(props.expanded ? modifiedFileLines(props.copy, props.files, props) : []),
   );
 }
 
-function modifiedFileLines(copy: TuiCopy, files: ModifiedFileStat[]): React.ReactNode[] {
+function modifiedFileLines(
+  copy: TuiCopy,
+  files: ModifiedFileStat[],
+  list: { listExpanded?: boolean; onToggleList?: () => void },
+): React.ReactNode[] {
   if (files.length === 0) {
     return [
       h("text", { key: "empty", style: { fg: palette.muted } }, copy.sidebar.modifiedFiles.empty),
     ];
   }
 
-  const visibleFiles = files.slice(0, MODIFIED_FILE_ROW_LIMIT);
+  const visibleFiles = files.slice(
+    0,
+    visibleSidebarRowCount(files.length, MODIFIED_FILE_ROW_LIMIT, list.listExpanded),
+  );
   const lines = visibleFiles.map((file) => modifiedFileLine(file));
-  if (files.length > MODIFIED_FILE_ROW_LIMIT) {
-    lines.push(
-      h(
-        "text",
-        { key: "more", style: { fg: palette.muted } },
-        copy.sidebar.modifiedFiles.more(files.length - MODIFIED_FILE_ROW_LIMIT),
-      ),
-    );
-  }
+  const foldRow = sidebarFoldRow({
+    count: files.length - MODIFIED_FILE_ROW_LIMIT,
+    expanded: list.listExpanded,
+    list: "modifiedFiles",
+    moreLabel: copy.sidebar.modifiedFiles.more,
+    onToggle: list.onToggleList,
+  });
+  if (foldRow) lines.push(foldRow);
   return lines;
 }
 

@@ -1,3 +1,4 @@
+import type { ScrollBoxRenderable } from "@mbears/opentui-core";
 import React from "react";
 import { useTerminalDimensions } from "@mbears/opentui-react";
 import type { TuiCopy } from "@zcode/i18n";
@@ -46,6 +47,17 @@ export function SubagentsSection({
           {
             id: "subagent-directory",
             scrollX: false,
+            // Local patch (sidebar-scroll): mouse events bubble, so a wheel turn
+            // over a list that scrolls itself must not also scroll the sidebar
+            // it sits in.
+            onMouse: function (
+              this: ScrollBoxRenderable,
+              event: { stopPropagation(): void; type: string },
+            ) {
+              if (event.type === "scroll" && this.scrollHeight > this.viewport.height) {
+                event.stopPropagation();
+              }
+            },
             style: {
               height: Math.max(1, Math.min(contentHeight || 1, Math.max(3, height - 22))),
               contentOptions: { flexDirection: "column" },

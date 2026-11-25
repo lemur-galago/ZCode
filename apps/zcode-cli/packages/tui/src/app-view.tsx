@@ -22,6 +22,7 @@ import { ModeSuggestionPanel } from "./app-mode-suggestion-panel.js";
 import { ModelSuggestionPanel } from "./app-model-suggestion-panel.js";
 import { useMcpSidebarStatus } from "./app-mcp-status.js";
 import { Sidebar } from "./app-sidebar.js";
+import { useSidebarFold } from "./app-sidebar-fold.js";
 import {
   type SidebarLayout,
   type SidebarSectionId,
@@ -152,6 +153,9 @@ export function AppView(props: {
   const queuedInputs = props.queuedInputs ?? [];
   const composerSelection = props.selection?.placement === "composer" ? props.selection : undefined;
   const actionSelection = props.selection && !composerSelection ? props.selection : undefined;
+  // Local patch (sidebar-fold): the state of the folded lists lives here and
+  // not in the sidebar, which the narrow overlay unmounts when it closes.
+  const sidebarFold = useSidebarFold();
   const sidebar = props.sidebarLayout.visible
     ? h(Sidebar, {
         subagents: props.subagents,
@@ -188,6 +192,9 @@ export function AppView(props: {
         workspaceDirectory: props.options.workspaceDirectory,
         workspaceGitBranch: props.options.workspaceGitBranch,
         copy: props.copy,
+        // Local patch (sidebar-fold).
+        listExpansion: sidebarFold.listExpansion,
+        onToggleList: sidebarFold.onToggleList,
       })
     : null;
 

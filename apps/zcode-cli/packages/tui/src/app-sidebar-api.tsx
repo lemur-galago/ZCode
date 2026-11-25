@@ -3,6 +3,7 @@ import type { TuiCopy } from "@zcode/i18n";
 import React from "react";
 import type { NetworkRequest } from "./app-model.js";
 import { palette } from "./app-model.js";
+import { sidebarFoldRow, visibleSidebarRowCount } from "./app-sidebar-fold.js";
 import { SIDEBAR_CONTENT_WIDTH } from "./app-sidebar-layout.js";
 import { SidebarSectionHeader } from "./app-sidebar-section-header.js";
 import { displayWidth, truncateDisplay } from "./app-terminal-width.js";
@@ -20,12 +21,16 @@ const COMPACT_IDENTIFIER_PREFIX_LENGTH = 8;
 const COMPACT_IDENTIFIER_SUFFIX_LENGTH = 4;
 const UUID_IDENTIFIER_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SIDEBAR_TEXT_ROW_STYLE = { flexShrink: 0, height: 1, truncate: true, wrapMode: "none" };
+const API_REQUEST_ROW_LIMIT = 5;
 
 export function ApiSection(props: {
   copy: TuiCopy;
   expanded: boolean;
+  // Local patch (sidebar-fold): the requests behind the "+N more" row.
+  listExpanded?: boolean;
   networkRequests: NetworkRequest[];
   onToggle?: () => void;
+  onToggleList?: () => void;
   usage?: ModelUsageSummary;
 }): React.ReactElement {
   return h(
@@ -48,7 +53,9 @@ export function ApiSection(props: {
 
 function apiLines(props: {
   copy: TuiCopy;
+  listExpanded?: boolean;
   networkRequests: NetworkRequest[];
+  onToggleList?: () => void;
   usage?: ModelUsageSummary;
 }): React.ReactNode[] {
   const usage = props.usage;
@@ -79,20 +86,22 @@ function apiLines(props: {
     return lines;
   }
 
-  for (const request of props.networkRequests.slice(0, 5)) {
+  for (const request of props.networkRequests.slice(
+    0,
+    visibleSidebarRowCount(props.networkRequests.length, API_REQUEST_ROW_LIMIT, props.listExpanded),
+  )) {
     lines.push(
       textLine(formatRequestLine(request, props.copy), requestColor(request), `api-${request.id}`),
     );
   }
-  if (props.networkRequests.length > 5) {
-    lines.push(
-      textLine(
-        props.copy.sidebar.api.more(props.networkRequests.length - 5),
-        palette.muted,
-        "api-more",
-      ),
-    );
-  }
+  const foldRow = sidebarFoldRow({
+    count: props.networkRequests.length - API_REQUEST_ROW_LIMIT,
+    expanded: props.listExpanded,
+    list: "apis",
+    moreLabel: props.copy.sidebar.api.more,
+    onToggle: props.onToggleList,
+  });
+  if (foldRow) lines.push(foldRow);
   return lines;
 }
 
