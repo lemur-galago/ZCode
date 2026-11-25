@@ -11,15 +11,22 @@ const h = React.createElement as (
 
 const EXPANDED_MARKER = "▼";
 const COLLAPSED_MARKER = "▶";
-const SIDEBAR_SECTION_HEADER_STYLE = {
-  attributes: TextAttributes.BOLD,
-  fg: palette.text,
-  flexShrink: 0,
-  height: 1,
-  truncate: true,
-  width: SIDEBAR_CONTENT_WIDTH,
-  wrapMode: "none",
-};
+
+// Local patch (sidebar-header-theme-color): the text color is read when the
+// header is drawn. A module-level constant kept the color of the default dark
+// theme, which made every section header of the sidebar invisible on the light
+// theme - the headers are the collapse toggles of the sections.
+function sidebarSectionHeaderStyle(): Record<string, unknown> {
+  return {
+    attributes: TextAttributes.BOLD,
+    fg: palette.text,
+    flexShrink: 0,
+    height: 1,
+    truncate: true,
+    width: SIDEBAR_CONTENT_WIDTH,
+    wrapMode: "none",
+  };
+}
 
 type MouseEventLike = {
   stopPropagation?: () => void;
@@ -39,7 +46,7 @@ export function SidebarSectionHeader(props: {
         props.onToggle?.();
       },
       selectable: false,
-      style: SIDEBAR_SECTION_HEADER_STYLE,
+      style: sidebarSectionHeaderStyle(),
     },
     `${marker} ${props.title}`,
   );
