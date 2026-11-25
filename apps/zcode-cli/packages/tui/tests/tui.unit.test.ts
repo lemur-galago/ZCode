@@ -600,6 +600,9 @@ test("infers Shiki languages from file diff paths", () => {
   assert.equal(inferShikiLanguage("TodoList/TodoItem.swift"), "swift");
   assert.equal(inferShikiLanguage("Dockerfile"), "dockerfile");
   assert.equal(inferShikiLanguage("file.unknown-ext"), undefined);
+  // Local patch (lsfusion-highlight): Shiki has no lsFusion grammar, the TUI carries its own.
+  assert.equal(inferShikiLanguage("hr/Employee.lsf"), "lsfusion");
+  assert.equal(inferShikiLanguage("hr/Employee.lsf-us"), undefined);
 });
 
 test("highlights Swift file diff content through Shiki", async () => {
@@ -614,6 +617,28 @@ test("highlights Swift file diff content through Shiki", async () => {
   assert.ok(highlighted);
   assert.equal(highlighted.length, 2);
   assert.ok(highlighted[0]?.some((segment) => segment.text === "struct" && segment.color));
+});
+
+test("highlights lsFusion file diff content through the grammar of the TUI", async () => {
+  resetShikiHighlighterForTest();
+
+  const highlighted = await highlightShikiCodeLines({
+    filePath: "hr/Employee.lsf",
+    lines: ["CLASS Employee; // staff", "salary = DATA INTEGER (Employee);"],
+    mode: "dark",
+  });
+
+  assert.ok(highlighted);
+  assert.equal(highlighted.length, 2);
+  // The keywords, the class name and the comment have a color of their own.
+  const colored = (line: number, text: string) =>
+    highlighted[line]?.some((segment) => segment.text === text && segment.color);
+  assert.ok(colored(0, "CLASS"));
+  assert.ok(colored(0, "Employee"));
+  assert.ok(colored(0, "// staff"));
+  assert.ok(colored(1, "salary"));
+  assert.ok(colored(1, "DATA"));
+  assert.ok(colored(1, "INTEGER"));
 });
 
 test("falls back when Shiki cannot infer a language", async () => {

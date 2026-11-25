@@ -89,6 +89,13 @@ test("recognizes a draft that is a script", () => {
       "@echo off\nsetlocal\nset \"NAME=demo\"\nif exist dist (\n  rmdir /s /q dist\n) else (\n  echo no dist\n)\npause\n",
       "bat",
     ],
+    // Local patch (lsfusion-highlight): the keywords are in upper case.
+    [
+      "MODULE HR;\nREQUIRE System;\n\nCLASS Employee;\nname = DATA STRING[100] (Employee);\n\nFORM employees\n    OBJECTS e = Employee\n    PROPERTIES(e) name\n;\n",
+      "lsfusion",
+    ],
+    ["name = DATA STRING[100] (Employee);\n", "lsfusion"],
+    ["setPrice (Employee e) {\n    IF salary(e) > 1000 THEN\n        salary(e) <- salary(e) * 1.1;\n}\n", "lsfusion"],
   ];
   for (const [text, language] of scripts) {
     assert.equal(detectScriptLanguage(text), language, text.split("\n")[0]);
@@ -109,6 +116,9 @@ test("leaves prose uncolored", () => {
     "# Title\n\nSome **bold** text.\n\n- item one\n- item two\n",
     // A build file of a kind the detection does not know.
     "build:\n\tnpm run build\n\ntest: build\n\tnpm test\n",
+    // Sentences that begin with an lsFusion keyword are still prose.
+    "FORM VALIDATION IS BROKEN\nDESIGN is broken. Fix it.\nWINDOW does not open.\n",
+    "CLASS registration closes on Friday.",
   ];
   for (const text of prose) assert.equal(detectScriptLanguage(text), undefined, text.split("\n")[0]);
 });
@@ -129,10 +139,14 @@ test("the code of a draft is its fenced blocks, or the whole draft when it is a 
     "",
   ].join("\n");
   const draft = scriptDraft(fenced);
-  // "text" and a language Shiki does not know give no code; the fences are still marked.
+  // "text" gives no code; the fences are still marked.
   assert.deepEqual(
     draft.regions.map((region) => ({ ...region, code: fenced.slice(region.start, region.end) })),
-    [{ code: "echo one\n", end: 23, language: "shellscript", start: 14 }],
+    [
+      { code: "echo one\n", end: 23, language: "shellscript", start: 14 },
+      // Local patch (lsfusion-highlight): the grammar the TUI carries.
+      { code: "FORM demo\n", end: 69, language: "lsfusion", start: 59 },
+    ],
   );
   assert.deepEqual(
     draft.fenceMarks.map((mark) => fenced.slice(mark.start, mark.end)),

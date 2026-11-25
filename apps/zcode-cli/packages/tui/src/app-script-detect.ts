@@ -215,6 +215,34 @@ const SIGNATURES: Record<string, Signatures> = {
       /@\w+\([^)]*\)\s*$/u,
     ],
   },
+  // Local patch (lsfusion-highlight): a module written like the lsFusion
+  // documentation, keywords in upper case; a statement may carry a comment
+  // behind its semicolon.
+  lsfusion: {
+    common: [/^\s*\/\//u, /;(?=\s*(?:\/\/.*)?$)/u],
+    strong: [
+      /^\s*CLASS\s+\w+(?:\s+'[^']*')?\s*(?:;|:|\{|$)/u,
+      /=\s*DATA\b/u,
+      /\bGROUP\s+(?:MAX|MIN|SUM|AGGR|CONCAT|LAST|ADD)\b/u,
+      /^\s*FORM\s+\w+(?:\s+'[^']*')?\s*(?:;|$)/u,
+      /^\s*OBJECTS\s+\w+\s*=/u,
+      /\b(?:OBJECTS|PROPERTIES|FILTERS|ORDERS)\s*\(/u,
+      /^\s*META\s+\w+\s*\(/u,
+      /^\s*(?:MODULE|REQUIRE|NAMESPACE|WINDOW)\b.*;(?=\s*(?:\/\/.*)?$)/u,
+      /^\s*(?:NAVIGATOR|DESIGN|WINDOW)\b.*\{/u,
+      /\bNEW\s+(?:FOLDER|WINDOW)\b/u,
+      /\b(?:NEWSESSION|NESTEDSESSION|NEWTHREAD|NEWEXECUTOR)\b/u,
+      /\bIF\b[^;\n]*\bTHEN\b/u,
+      /\bWHEN\b.*\bTHEN\s*$/u,
+      /\b(?:FOR|WHILE)\b.*\bDO\s*\{?\s*$/u,
+      /^\s*CASE\s*$/u,
+      // An action with a body; the braces of an if or a loop of another language do not count.
+      /^\s*(?!(?:if|for|while|switch|catch|else|try|do)\b)[A-Za-z_]\w*(?:\s+'[^']*')?\s*(?:\([^()\n]*\))?\s*\{/u,
+      /\b(?:ABSTRACT|OVERRIDE|MULTI|EXCLUSIVE|PARTITION|RECURSION|EXTENDS?|ISCLASS)\b/u,
+      /<-/u,
+      /^\s*@\w+\s*\(/u,
+    ],
+  },
 };
 
 // A line of brackets alone belongs to every language and to none.

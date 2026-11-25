@@ -1,5 +1,6 @@
 import path from "node:path";
 import { bundledLanguages, createHighlighter, type BundledLanguage, type BundledTheme } from "shiki";
+import { LSFUSION_LANGUAGE, lsfusionLanguage } from "./app-lsfusion-grammar.js";
 import type { TuiThemeMode } from "./theme/index.js";
 
 const SHIKI_DARK_THEME = "github-dark";
@@ -7,17 +8,22 @@ const SHIKI_LIGHT_THEME = "github-light";
 const SHIKI_THEMES = [SHIKI_DARK_THEME, SHIKI_LIGHT_THEME] as const;
 const HIGHLIGHT_TIMEOUT_MS = 2_500;
 
-const LANGUAGE_BY_FILENAME: Record<string, BundledLanguage> = {
+// Local patch (lsfusion-highlight): lsFusion is the one language the TUI adds
+// to Shiki, so it counts wherever a Shiki language is named.
+export type ShikiLanguage = BundledLanguage | typeof LSFUSION_LANGUAGE;
+
+const LANGUAGE_BY_FILENAME: Record<string, ShikiLanguage> = {
   dockerfile: "dockerfile",
   makefile: "makefile",
 };
 
-const LANGUAGE_BY_EXTENSION: Record<string, BundledLanguage> = {
+const LANGUAGE_BY_EXTENSION: Record<string, ShikiLanguage> = {
   cjs: "javascript",
   cts: "typescript",
   h: "c",
   hpp: "cpp",
   htm: "html",
+  lsf: LSFUSION_LANGUAGE,
   mjs: "javascript",
   mts: "typescript",
   psm1: "powershell",
@@ -36,10 +42,10 @@ export type ShikiHighlighter = Awaited<ReturnType<typeof createHighlighter>>;
 
 let highlighterPromise: Promise<ShikiHighlighter> | undefined;
 let highlighter: ShikiHighlighter | undefined;
-const loadedLanguages = new Set<BundledLanguage>();
+const loadedLanguages = new Set<ShikiLanguage>();
 const highlightCache = new Map<string, ShikiHighlightSegment[][] | undefined>();
 
-export function inferShikiLanguage(filePath: string | undefined): BundledLanguage | undefined {
+export function inferShikiLanguage(filePath: string | undefined): ShikiLanguage | undefined {
   if (!filePath) return undefined;
   const basename = path.basename(filePath).toLowerCase();
   const filenameMatch = LANGUAGE_BY_FILENAME[basename];
@@ -48,7 +54,7 @@ export function inferShikiLanguage(filePath: string | undefined): BundledLanguag
   const extension = path.extname(basename).replace(/^\./u, "");
   if (!extension) return undefined;
   const mapped = LANGUAGE_BY_EXTENSION[extension] ?? extension;
-  return isBundledLanguage(mapped) ? mapped : undefined;
+  return isShikiLanguage(mapped) ? mapped : undefined;
 }
 
 export async function highlightShikiCodeLines(input: {
@@ -83,7 +89,7 @@ export function resetShikiHighlighterForTest(): void {
 }
 
 async function tokenizeLines(input: {
-  language: BundledLanguage;
+  language: ShikiLanguage;
   lines: string[];
   theme: BundledTheme;
 }): Promise<ShikiHighlightSegment[][] | undefined> {
@@ -92,7 +98,7 @@ async function tokenizeLines(input: {
     if (!highlighter) return undefined;
 
     const result = highlighter.codeToTokens(input.lines.join("\n"), {
-      lang: input.language,
+      lang: input.language as BundledLanguage,
       theme: input.theme,
     });
     return padTokenLines(
@@ -133,15 +139,16 @@ export function isShikiLanguageLoaded(language: string): boolean {
   return loadedLanguages.has(language as BundledLanguage);
 }
 
-export async function loadShikiLanguage(language: BundledLanguage): Promise<void> {
+export async function loadShikiLanguage(language: ShikiLanguage): Promise<void> {
   if (loadedLanguages.has(language)) return;
   const instance = await getHighlighter();
-  await instance.loadLanguage(language);
+  // The grammar of lsFusion travels with the TUI instead of a Shiki package.
+  await instance.loadLanguage(language === LSFUSION_LANGUAGE ? lsfusionLanguage : language);
   loadedLanguages.add(language);
 }
 
-function isBundledLanguage(language: string): language is BundledLanguage {
-  return Object.prototype.hasOwnProperty.call(bundledLanguages, language);
+function isShikiLanguage(language: string): language is ShikiLanguage {
+  return language === LSFUSION_LANGUAGE || Object.prototype.hasOwnProperty.call(bundledLanguages, language);
 }
 
 function shikiThemeForMode(mode: TuiThemeMode): BundledTheme {

@@ -146,6 +146,50 @@ test("a user message shows its script in color, prose stays the plain text eleme
   }
 });
 
+test("a user message that is an lsFusion module shows in color", async () => {
+  // Local patch (lsfusion-highlight): the one grammar that does not come with Shiki.
+  setActiveTuiThemeMode("light");
+  const content = "MODULE HR;\nname = DATA STRING[100] (Employee);\n";
+  let view: Awaited<ReturnType<typeof testRender>> | undefined;
+  try {
+    await act(async () => {
+      view = await testRender(
+        React.createElement(MessageRow, {
+          index: 0,
+          message: { content, role: "user" },
+          terminalWidth: 80,
+        }),
+        { height: 10, width: 80 },
+      );
+      await view.renderOnce();
+    });
+    assert.ok(view);
+    let spans: Span[] = [];
+    for (let attempt = 0; attempt < 160; attempt += 1) {
+      await act(async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+        await view.renderOnce();
+      });
+      spans = view.captureSpans().lines.flatMap((line) => line.spans);
+      if (spans.some((span) => span.text === "name" && hex(span.fg) === LIGHT_TUI_THEME.syntaxFunction)) break;
+    }
+    const colorOf = (text: string): string | undefined => {
+      const span = spans.find((candidate) => candidate.text.trim() === text);
+      return span && hex(span.fg);
+    };
+    assert.equal(colorOf("MODULE"), LIGHT_TUI_THEME.syntaxKeyword);
+    assert.equal(colorOf("DATA"), LIGHT_TUI_THEME.syntaxKeyword);
+    assert.equal(colorOf("STRING"), LIGHT_TUI_THEME.syntaxType);
+    assert.equal(colorOf("Employee"), LIGHT_TUI_THEME.syntaxType);
+    assert.equal(colorOf("name"), LIGHT_TUI_THEME.syntaxFunction);
+  } finally {
+    await act(async () => {
+      view?.renderer.destroy();
+    });
+    setActiveTuiThemeMode("dark");
+  }
+});
+
 test("the composer colors fenced blocks and scripts as they are typed", async () => {
   const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
   const previousActEnvironment = environment.IS_REACT_ACT_ENVIRONMENT;
@@ -246,6 +290,18 @@ test("the composer colors fenced blocks and scripts as they are typed", async ()
     assert.equal(script.get("npm"), theme.syntaxFunction);
     assert.equal(script.get("ci"), theme.syntaxString);
     assert.equal(script.get('"done'), theme.syntaxString);
+
+    // An lsFusion module without fences: the TUI carries that grammar itself.
+    await clearDraft();
+    await type("CLASS Employee;");
+    await newLine();
+    await type("name = DATA STRING[100] (Employee);");
+    const lsfusion = await frameColors("CLASS", theme.syntaxKeyword);
+    assert.equal(lsfusion.get("CLASS"), theme.syntaxKeyword);
+    assert.equal(lsfusion.get("DATA"), theme.syntaxKeyword);
+    assert.equal(lsfusion.get("STRING"), theme.syntaxType);
+    assert.equal(lsfusion.get("Employee"), theme.syntaxType);
+    assert.equal(lsfusion.get("name"), theme.syntaxFunction);
 
     // Prose keeps one color.
     await clearDraft();

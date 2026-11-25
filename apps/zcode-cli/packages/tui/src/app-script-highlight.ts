@@ -7,6 +7,7 @@ import {
   loadedHighlighter,
   type ShikiHighlighter,
 } from "./app-shiki-highlighter.js";
+import { LSFUSION_LANGUAGE, LSFUSION_LANGUAGE_NAMES } from "./app-lsfusion-grammar.js";
 import { SHIKI_FILETYPE_NAMES, SHIKI_LANGUAGE_NAMES } from "./app-shiki-languages.js";
 
 // Local patch (script-highlight): OpenTUI ships tree-sitter grammars for four
@@ -29,7 +30,8 @@ type ExplainedToken = { content: string; explanation?: ScopeExplanation[]; offse
 
 // The filetypes the bundled tree-sitter grammars cover keep their own highlighting.
 const TREE_SITTER_FILETYPES = new Set(["javascript", "typescript", "markdown", "zig"]);
-const SHIKI_LANGUAGE_KEYS = new Set(Object.keys(bundledLanguages));
+// Local patch (lsfusion-highlight): the grammar of lsFusion is carried along.
+const SHIKI_LANGUAGE_KEYS = new Set([...Object.keys(bundledLanguages), LSFUSION_LANGUAGE]);
 // Scopes do not depend on the theme; Shiki only needs one to tokenize.
 const SHIKI_THEME = "github-light";
 const MAX_HIGHLIGHTED_CHARACTERS = 40_000;
@@ -67,7 +69,11 @@ let sharedClient: TreeSitterClient | undefined;
 export function shikiLanguageId(name: string): string | undefined {
   const normalized = name.trim().toLowerCase().replace(/^\./u, "");
   if (!normalized) return undefined;
-  const id = SHIKI_FILETYPE_NAMES[normalized] ?? SHIKI_LANGUAGE_NAMES[normalized] ?? normalized;
+  const id =
+    LSFUSION_LANGUAGE_NAMES[normalized] ??
+    SHIKI_FILETYPE_NAMES[normalized] ??
+    SHIKI_LANGUAGE_NAMES[normalized] ??
+    normalized;
   return SHIKI_LANGUAGE_KEYS.has(id) ? id : undefined;
 }
 

@@ -63,7 +63,11 @@ test("maps fence names and filetypes to Shiki languages", () => {
   assert.equal(shikiLanguageId("makefile"), "make");
   // A fence named "cmd" is a batch file, not Shiki's alias of Visual Basic.
   assert.equal(shikiLanguageId("cmd"), "bat");
-  assert.equal(shikiLanguageId("lsfusion"), undefined);
+  // Local patch (lsfusion-highlight): Shiki has no lsFusion grammar, the TUI carries its own.
+  assert.equal(shikiLanguageId("lsfusion"), "lsfusion");
+  assert.equal(shikiLanguageId("lsf"), "lsfusion");
+  assert.equal(shikiLanguageId(" .LSF "), "lsfusion");
+  assert.equal(shikiLanguageId("ls-fusion"), undefined);
   assert.equal(shikiLanguageId(""), undefined);
   assert.equal(shikiLanguageId("  .PY "), "python");
 });
@@ -193,13 +197,19 @@ test("the client follows the base client through a renderer restart", async () =
   resetScriptHighlightForTest();
 });
 
-async function renderMessage(theme: typeof LIGHT_TUI_THEME): Promise<View> {
+async function renderMessage(
+  theme: typeof LIGHT_TUI_THEME,
+  content = CONTENT,
+  // Shiki answers for its blocks, tree-sitter in its worker for the JavaScript one.
+  settled: (view: View) => boolean = (view) =>
+    Boolean(coloredSpan(view, "echo", theme.syntaxFunction) && coloredSpan(view, '"s"', theme.syntaxString)),
+): Promise<View> {
   let view: View | undefined;
   await act(async () => {
     view = (await testRender(
       React.createElement(MessageRow, {
         index: 0,
-        message: { content: CONTENT, role: "agent" },
+        message: { content, role: "agent" },
         terminalWidth: 90,
       }),
       { height: 30, width: 90 },
@@ -211,13 +221,86 @@ async function renderMessage(theme: typeof LIGHT_TUI_THEME): Promise<View> {
       await sleep(25);
       await view.renderOnce();
     });
-    // Shiki answers for its blocks, tree-sitter in its worker for the JavaScript one.
-    const shikiDone = coloredSpan(view, "echo", theme.syntaxFunction);
-    const treeSitterDone = coloredSpan(view, '"s"', theme.syntaxString);
-    if (shikiDone && treeSitterDone) break;
+    if (settled(view)) break;
   }
   return view;
 }
+
+// Local patch (lsfusion-highlight): the one grammar that does not come with Shiki.
+const LSFUSION = [
+  "MODULE hr;",
+  "CLASS Employee; // staff",
+  "salary = DATA NUMERIC[14,2] (Employee);",
+  "greeting (Employee e) = 'Hello, ${name(e)}';",
+].join("\n");
+
+test("an lsFusion script is styled by the grammar the TUI carries", async () => {
+  resetScriptHighlightForTest();
+  const tokens = await tokenizeScript(LSFUSION, "lsfusion");
+  /** The scope and the text of the range that starts where this text does. */
+  const rangeAt = (text: string, from = 0): string[] | undefined => {
+    const start = LSFUSION.indexOf(text, from);
+    const token = tokens.find((candidate) => candidate.start === start);
+    return token && [token.scope, LSFUSION.slice(token.start, token.end)];
+  };
+  assert.deepEqual(rangeAt("MODULE"), ["keyword", "MODULE"]);
+  assert.deepEqual(rangeAt("CLASS"), ["keyword", "CLASS"]);
+  assert.deepEqual(rangeAt("Employee"), ["type", "Employee"]);
+  assert.deepEqual(rangeAt("// staff"), ["comment", "// staff"]);
+  assert.deepEqual(rangeAt("DATA"), ["keyword", "DATA"]);
+  assert.deepEqual(rangeAt("NUMERIC"), ["type", "NUMERIC"]);
+  assert.deepEqual(rangeAt("14"), ["number", "14"]);
+  assert.deepEqual(rangeAt("salary"), ["function", "salary"]);
+  assert.deepEqual(rangeAt("greeting"), ["function", "greeting"]);
+  // The interpolated call keeps its own color inside the string.
+  assert.deepEqual(rangeAt("'Hello, "), ["string", "'Hello, "]);
+  assert.deepEqual(rangeAt("name("), ["function", "name"]);
+  // The module name, the parameters and the operators are not styled.
+  assert.equal(rangeAt("hr"), undefined);
+  assert.equal(rangeAt(" e)"), undefined);
+  assert.equal(rangeAt("= DATA"), undefined);
+
+  // The answer is remembered, and the fence name and the filetype lead to it too.
+  assert.deepEqual(tokenizeScriptSync(LSFUSION, "lsfusion"), tokens);
+  const client = scriptHighlightClient();
+  const block = await client.highlightOnce("CLASS Employee;\n", "lsf");
+  assert.deepEqual(
+    block.highlights?.map(([start, end, scope]) => [start, end, scope]),
+    [
+      [0, 5, "keyword"],
+      [6, 14, "type"],
+    ],
+  );
+  resetScriptHighlightForTest();
+});
+
+test("an lsf block takes the theme colors in a message", async () => {
+  const content = ["```lsf", ...LSFUSION.split("\n"), "```"].join("\n");
+  for (const theme of [LIGHT_TUI_THEME, DARK_TUI_THEME]) {
+    resetScriptHighlightForTest();
+    setActiveTuiThemeMode(theme.mode);
+    const view = await renderMessage(theme, content, (frame) =>
+      Boolean(coloredSpan(frame, "MODULE", theme.syntaxKeyword) && coloredSpan(frame, "salary", theme.syntaxFunction)),
+    );
+    try {
+      assert.ok(coloredSpan(view, "MODULE", theme.syntaxKeyword), "module");
+      assert.ok(coloredSpan(view, "CLASS", theme.syntaxKeyword), "class");
+      assert.ok(coloredSpan(view, "// staff", theme.syntaxComment), "comment");
+      assert.ok(coloredSpan(view, "DATA", theme.syntaxKeyword), "data");
+      assert.ok(coloredSpan(view, "NUMERIC", theme.syntaxType), "type");
+      assert.ok(coloredSpan(view, "Employee", theme.syntaxType), "class name");
+      assert.ok(coloredSpan(view, "14", theme.syntaxNumber), "number");
+      assert.ok(coloredSpan(view, "salary", theme.syntaxFunction), "property");
+      assert.ok(coloredSpan(view, "'Hello, ", theme.syntaxString), "string");
+      assert.ok(coloredSpan(view, "name", theme.syntaxFunction), "call in the string");
+    } finally {
+      await act(async () => {
+        view.renderer.destroy();
+      });
+      setActiveTuiThemeMode("dark");
+    }
+  }
+});
 
 function coloredSpan(view: View, needle: string, color: string): Span | undefined {
   return view
