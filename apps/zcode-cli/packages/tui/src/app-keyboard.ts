@@ -156,6 +156,17 @@ export function useTuiKeyboardControls({
       (key: KeyEvent) => {
         if (key.eventType === "release") return;
 
+        // Local patch (ctrl-l-full-repaint): the renderer writes only the cells
+        // that changed since its previous frame, so whatever the terminal lost
+        // - a cleared screen, a buffer the terminal rebuilt - stays lost until
+        // a resize, and the interface is a ghost of itself. Ctrl+L repaints
+        // every cell, whatever state the view is in.
+        if (key.name === "l" && key.ctrl) {
+          consumeKey(key);
+          renderer.requestFullRepaintRender();
+          return;
+        }
+
         if (readOnlyView) {
           resetCtrlCExitGuard(ctrlCExitGuardRef.current);
           if (
