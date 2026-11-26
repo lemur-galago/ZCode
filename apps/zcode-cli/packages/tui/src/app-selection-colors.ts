@@ -1,4 +1,9 @@
-import { EditBufferRenderable, TextBufferRenderable, parseColor } from "@mbears/opentui-core";
+import {
+  EditBufferRenderable,
+  TextBufferRenderable,
+  TextTableRenderable,
+  parseColor,
+} from "@mbears/opentui-core";
 import type { RGBA } from "@mbears/opentui-core";
 import { activeTuiTheme } from "./theme/index.js";
 import type { TuiThemeTokens } from "./theme/index.js";
@@ -19,6 +24,15 @@ const COLORED_METHODS = [
   "refreshSelectionStyle",
   "setSelection",
 ] as const;
+// A markdown table is a renderable of its own that passes the colors to its
+// cells from one method, for a new selection and again when it is laid out.
+const TABLE_COLORED_METHODS = ["applySelectionToCells"] as const;
+
+const COLORED_CLASSES: ReadonlyArray<readonly [object, readonly string[]]> = [
+  [TextBufferRenderable.prototype, COLORED_METHODS],
+  [EditBufferRenderable.prototype, COLORED_METHODS],
+  [TextTableRenderable.prototype, TABLE_COLORED_METHODS],
+];
 
 type MethodRecord = Record<string, (...args: unknown[]) => unknown>;
 // The private field every one of those methods reads; checked with `in` so that
@@ -50,16 +64,16 @@ const restoreOriginals: Array<() => void> = [];
 export function installThemeSelectionColors(): () => void {
   installations += 1;
   if (installations === 1) {
-    for (const prototype of [TextBufferRenderable.prototype, EditBufferRenderable.prototype]) {
-      const methods = prototype as unknown as MethodRecord;
-      for (const method of COLORED_METHODS) {
-        const original = methods[method];
+    for (const [prototype, methods] of COLORED_CLASSES) {
+      const record = prototype as unknown as MethodRecord;
+      for (const method of methods) {
+        const original = record[method];
         if (typeof original !== "function") continue;
-        methods[method] = function (this: object, ...args: unknown[]): unknown {
+        record[method] = function (this: object, ...args: unknown[]): unknown {
           return withThemeSelectionBackground(this, () => original.apply(this, args));
         };
         restoreOriginals.push(() => {
-          methods[method] = original;
+          record[method] = original;
         });
       }
     }
