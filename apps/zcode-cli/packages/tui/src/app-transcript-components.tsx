@@ -7,6 +7,9 @@ import { DEFAULT_TUI_COPY } from "./app-locale.js";
 // Local patch (script-highlight): scripts in user messages.
 import { ScriptText } from "./app-script-text.js";
 import { scriptDraft } from "./app-script-draft.js";
+// Local patch (transcript-scrollbar): the scrollbar of the transcript, drawn
+// in the colors of the theme.
+import { trackTranscriptScroller } from "./app-transcript-scrollbar.js";
 import { MarkdownText, substituteUnsupportedGlyphs } from "./app-markdown.js";
 import { ThoughtTranscriptPartView } from "./app-thought-components.js";
 import { ToolTranscriptPartView } from "./app-tool-components.js";
@@ -50,6 +53,9 @@ export function ContentPane({
       stickyScroll: true,
       stickyStart: "bottom",
       viewportCulling: true,
+      // Local patch (transcript-scrollbar): the parts of the scrollbar draw
+      // themselves after their stock drawing.
+      ref: trackTranscriptScroller,
       style: {
         backgroundColor: palette.background,
         border: false,

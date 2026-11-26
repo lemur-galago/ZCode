@@ -21,8 +21,15 @@ export const SIDEBAR_SCROLLBAR_ID = "sidebar-scrollbar";
 export const SIDEBAR_SCROLLBAR_WIDTH = 1;
 
 type ScrollState = { content: number; scrollTop: number; viewport: number };
-/** The state of the scroll box plus the place of its viewport on screen. */
-type Track = ScrollState & { rows: number; screenTop: number };
+/**
+ * The state of a scroll box plus the rows a thumb travels on screen and the
+ * way to scroll it. A thumb is drawn and dragged on a track.
+ */
+export type ThumbTrack = ScrollState & {
+  rows: number;
+  screenTop: number;
+  scrollTo: (scrollTop: number) => void;
+};
 export type ThumbGeometry = { size: number; start: number };
 type ScrollbarColumn = Renderable & { thumbColor?: ColorInput };
 
@@ -43,8 +50,7 @@ export function sidebarThumbGeometry(
 }
 
 let scroller: ScrollBoxRenderable | undefined;
-let dragging = false;
-let dragOffset = 0;
+const sidebarDrag = createThumbDrag(scrollTrack);
 
 /**
  * Ref of the scroll box: the scrollbar column reads its scroll state, and the
@@ -53,7 +59,7 @@ let dragOffset = 0;
  */
 export function trackSidebarScroller(box: ScrollBoxRenderable | null): void {
   scroller = box && !box.isDestroyed ? box : undefined;
-  dragging = false;
+  sidebarDrag.cancel();
   if (scroller) scroller.verticalScrollBar.visible = false;
 }
 
@@ -68,52 +74,95 @@ export function drawSidebarScrollbar(this: ScrollbarColumn, buffer: OptimizedBuf
     track.screenTop + thumb.start,
     this.width,
     thumb.size,
-    thumbColor(this.thumbColor),
+    scrollbarColor(this.thumbColor ?? DEFAULT_THUMB_COLOR),
   );
 }
 
 /** A press on the column: on the thumb it starts a drag, on the track it jumps there. */
 export function sidebarScrollbarMouseDown(this: Renderable, event: MouseEvent): void {
-  // The column is a control: the press is neither a selection nor a copy.
-  event.stopPropagation();
-  event.preventDefault();
-  const track = scrollTrack();
-  dragging = track !== undefined;
-  if (!track) return;
-  const thumb = sidebarThumbGeometry(track, track.rows);
-  if (!thumb) return;
-  // One cell wide: the pointer is bound to the column for the drag, or the
-  // first movement sideways would drop it.
-  capturePointer(this);
-  dragOffset = event.y - (track.screenTop + thumb.start);
-  if (dragOffset < 0 || dragOffset >= thumb.size) {
-    dragOffset = Math.floor(thumb.size / 2);
-    scrollToPointer(track, event.y);
-  }
+  sidebarDrag.mouseDown.call(this, event);
 }
 
 export function sidebarScrollbarDrag(this: Renderable, event: MouseEvent): void {
-  if (!dragging) return;
-  event.stopPropagation();
-  event.preventDefault();
-  const track = scrollTrack();
-  if (track) scrollToPointer(track, event.y);
+  sidebarDrag.drag.call(this, event);
 }
 
 export function sidebarScrollbarMouseUp(this: Renderable, event: MouseEvent): void {
-  if (!dragging) return;
-  sidebarScrollbarDrag.call(this, event);
-  dragging = false;
+  sidebarDrag.mouseUp.call(this, event);
 }
 
 export function sidebarScrollbarMove(): void {
   // Movement without a button: a release that never reached the column ends a drag.
-  dragging = false;
+  sidebarDrag.cancel();
 }
 
 export function sidebarScrollbarScroll(event: MouseEvent): void {
   // A wheel turn over the column scrolls the sections like anywhere else in the sidebar.
   if (scroller && !scroller.isDestroyed) scroller.processMouseEvent(new MouseEvent(scroller, event));
+}
+
+/**
+ * Press, drag and release of a thumb one column wide. `read` yields the track
+ * at call time; `undefined` leaves the pointer alone. One per scroll box: the
+ * drag is a state of its own.
+ */
+export function createThumbDrag(read: () => ThumbTrack | undefined): {
+  cancel: () => void;
+  drag: (this: Renderable, event: MouseEvent) => void;
+  mouseDown: (this: Renderable, event: MouseEvent) => void;
+  mouseUp: (this: Renderable, event: MouseEvent) => void;
+} {
+  let dragging = false;
+  let dragOffset = 0;
+
+  function mouseDown(this: Renderable, event: MouseEvent): void {
+    // The thumb is a control: the press is neither a selection nor a copy.
+    event.stopPropagation();
+    event.preventDefault();
+    const track = read();
+    dragging = track !== undefined;
+    if (!track) return;
+    const thumb = sidebarThumbGeometry(track, track.rows);
+    if (!thumb) return;
+    // One cell wide: the pointer is bound to the thumb for the drag, or the
+    // first movement sideways would drop it.
+    capturePointer(this);
+    dragOffset = event.y - (track.screenTop + thumb.start);
+    if (dragOffset < 0 || dragOffset >= thumb.size) {
+      dragOffset = Math.floor(thumb.size / 2);
+      scrollToPointer(track, event.y);
+    }
+  }
+
+  function drag(this: Renderable, event: MouseEvent): void {
+    if (!dragging) return;
+    event.stopPropagation();
+    event.preventDefault();
+    const track = read();
+    if (track) scrollToPointer(track, event.y);
+  }
+
+  function mouseUp(this: Renderable, event: MouseEvent): void {
+    if (!dragging) return;
+    drag.call(this, event);
+    dragging = false;
+  }
+
+  /** Movement without a button, or another scroll box: a drag that never ended is over. */
+  function cancel(): void {
+    dragging = false;
+  }
+
+  /** Scrolls so that the thumb top lands `dragOffset` rows above the pointer. */
+  function scrollToPointer(track: ThumbTrack, pointerY: number): void {
+    const thumb = sidebarThumbGeometry(track, track.rows);
+    if (!thumb) return;
+    const travel = track.rows - thumb.size;
+    const start = Math.max(0, Math.min(pointerY - track.screenTop - dragOffset, travel));
+    track.scrollTo(travel > 0 ? Math.round((start / travel) * (track.content - track.viewport)) : 0);
+  }
+
+  return { cancel, drag, mouseDown, mouseUp };
 }
 
 /**
@@ -132,36 +181,31 @@ function capturePointer(column: Renderable): void {
  * The track is the viewport of the scroll box: where it is on screen and how
  * many rows it shows. The column is only the place the thumb lives in.
  */
-function scrollTrack(): Track | undefined {
-  if (!scroller || scroller.isDestroyed) return undefined;
+function scrollTrack(): ThumbTrack | undefined {
+  const box = scroller;
+  if (!box || box.isDestroyed) return undefined;
   return {
-    content: scroller.scrollHeight,
-    rows: scroller.viewport.height,
-    screenTop: scroller.viewport.y,
-    scrollTop: scroller.scrollTop,
-    viewport: scroller.viewport.height,
+    content: box.scrollHeight,
+    rows: box.viewport.height,
+    screenTop: box.viewport.y,
+    scrollTop: box.scrollTop,
+    viewport: box.viewport.height,
+    scrollTo: (scrollTop) => {
+      box.scrollTop = scrollTop;
+    },
   };
 }
 
-/** Scrolls so that the thumb top lands `dragOffset` rows above the pointer. */
-function scrollToPointer(track: Track, pointerY: number): void {
-  if (!scroller) return;
-  const thumb = sidebarThumbGeometry(track, track.rows);
-  if (!thumb) return;
-  const travel = track.rows - thumb.size;
-  const start = Math.max(0, Math.min(pointerY - track.screenTop - dragOffset, travel));
-  scroller.scrollTop =
-    travel > 0 ? Math.round((start / travel) * (track.content - track.viewport)) : 0;
-}
+const DEFAULT_THUMB_COLOR = "#9a9ea3";
+const parsedColors = new Map<string, RGBA>();
 
-let cachedColorSource: ColorInput | undefined;
-let cachedColor: RGBA | undefined;
-
-function thumbColor(source: ColorInput | undefined): RGBA {
-  // The color follows the theme: it is read on every render, parsed once per value.
-  if (source !== cachedColorSource || !cachedColor) {
-    cachedColor = parseColor(source ?? "#9a9ea3");
-    cachedColorSource = source;
+/** A color of the theme: it is read on every render and parsed once per value. */
+export function scrollbarColor(source: ColorInput): RGBA {
+  if (typeof source !== "string") return parseColor(source);
+  let color = parsedColors.get(source);
+  if (!color) {
+    color = parseColor(source);
+    parsedColors.set(source, color);
   }
-  return cachedColor;
+  return color;
 }
