@@ -1,0 +1,107 @@
+# Builds the ZCode CLI user-facing executables for all supported platforms.
+#
+# Produces three artifact groups per run (Actions → run page → Artifacts):
+#   - zcode-cli-sea-linux    zcode-linux-x64, zcode-linux-arm64      (single-file SEA binaries)
+#   - zcode-cli-sea-darwin   zcode-darwin-arm64, zcode-darwin-x64    (ad-hoc signed, see notes below)
+#   - zcode-cli-sea-windows  zcode-windows-x64.exe, zcode-windows-arm64.exe
+#   - zcode-cli-portable-win-x64  ZCode-CLI-Portable zip (agent bundle + Node runtime + MinGit + zcode.cmd)
+#
+# Per-platform runners are used so each host target gets a real smoke test and
+# darwin binaries get their ad-hoc codesign (codesign exists only on macOS).
+# Keep node-version in sync with mise.toml (the SEA blob records this Node version).
+name: Build CLI executables
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24.14.0"
+
+jobs:
+  sea:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux (x64 + arm64)
+            platform: linux
+            artifact: zcode-cli-sea-linux
+            binary-pattern: |
+              apps/zcode-cli/packages/cli/dist/zcode-linux-*
+          - os: macos-latest
+            name: macOS (arm64 + x64)
+            platform: darwin
+            artifact: zcode-cli-sea-darwin
+            binary-pattern: |
+              apps/zcode-cli/packages/cli/dist/zcode-darwin-*
+          - os: windows-latest
+            name: Windows (x64 + arm64) + portable package
+            platform: win
+            artifact: zcode-cli-sea-windows
+            binary-pattern: |
+              apps/zcode-cli/packages/cli/dist/zcode-windows-*
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reads the pinned version from the root package.json "packageManager" field.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace (root shared + all CLI packages + CLI bundle)
+        run: pnpm build:sea:prepare
+
+      - name: Build SEA binaries (${{ matrix.platform }})
+        run: node apps/zcode-cli/packages/cli/scripts/build-sea.mjs --all --${{ matrix.platform }}
+
+      - name: Upload SEA binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.binary-pattern }}
+          if-no-files-found: error
+
+      # The portable package is Windows-only by design (zcode.cmd launcher, MinGit,
+      # win keyring native module); assemble-portable.mjs documents the layout.
+      - name: Stage minimal Node runtime for the portable package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .build/portable-node | Out-Null
+          Copy-Item (Get-Command node).Source .build/portable-node/node.exe
+
+      - name: Assemble portable package
+        if: runner.os == 'Windows'
+        run: node scripts/assemble-portable.mjs --node .build/portable-node
+
+      - name: Zip portable package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $info = Get-Content .build/portable-info.json -Raw | ConvertFrom-Json
+          $zip = ".build/zcode-cli-portable-win-x64.zip"
+          Compress-Archive -Path $info.dir -DestinationPath $zip -Force
+
+      - name: Upload portable package
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zcode-cli-portable-win-x64
+          path: .build/zcode-cli-portable-win-x64.zip
+          if-no-files-found: error
