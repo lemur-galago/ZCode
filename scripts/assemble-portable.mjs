@@ -106,6 +106,25 @@ await cp(playwrightDir, resolve(PACKAGE_ROOT, "agent/node_modules/playwright-cor
   recursive: true,
 });
 
+// @napi-rs/keyring is a CLI external as well: the OS credential store behind /login. The collector
+// walks `dependencies` only, so the wrapper arrives without its native half, an optional
+// dependency, and /login fails with "System credential storage is unavailable". Resolved from the
+// wrapper's own folder, the way the wrapper itself does it at runtime.
+const keyringNativePackage = "@napi-rs/keyring-win32-x64-msvc";
+const keyringDir = dirname(requireFromCli.resolve("@napi-rs/keyring/package.json"));
+let keyringNativeDir;
+try {
+  keyringNativeDir = dirname(
+    createRequire(resolve(keyringDir, "package.json")).resolve(`${keyringNativePackage}/package.json`),
+  );
+} catch {
+  throw new Error(`Missing ${keyringNativePackage}: /login cannot reach the OS credential store without it`);
+}
+await cp(keyringNativeDir, resolve(PACKAGE_ROOT, `agent/node_modules/${keyringNativePackage}`), {
+  dereference: true,
+  recursive: true,
+});
+
 // Runtime: reuse the proven Node runtime from the current install, else use --node.
 const reuseRuntime = await newestVersionDir((d) => resolve(d, "runtime/node.exe"));
 if (reuseRuntime) {
@@ -188,4 +207,10 @@ await writeFile(
 
 console.log("tui dist files:", (await readdir(resolve(PACKAGE_ROOT, "agent/node_modules/@zcode/tui/dist"))).length);
 console.log("check-update present:", await pathExists(resolve(PACKAGE_ROOT, "agent/check-update.mjs")));
+console.log(
+  "keyring native present:",
+  await pathExists(
+    resolve(PACKAGE_ROOT, `agent/node_modules/${keyringNativePackage}/keyring.win32-x64-msvc.node`),
+  ),
+);
 console.log("DONE", PACKAGE_ROOT, versionId);
