@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTestRenderer } from "@mbears/opentui-core/testing";
 import type { UiThemeMode } from "@zcode/contracts";
-import React, { act } from "react";
+import { act } from "react";
 import { runTuiWithRenderer } from "../src/tui.js";
 import type { TuiOptions } from "../src/types.js";
 
@@ -46,7 +46,7 @@ test("a plain L is a letter and repaints nothing", async () => {
   const app = await startApp();
   try {
     const letter = (await app.key("l")).cells;
-    assert.ok(letter < (WIDTH * HEIGHT) / 10, `a letter wrote ${letter} cells`);
+    assert.ok(letter > 0 && letter < (WIDTH * HEIGHT) / 10, `a letter wrote ${letter} cells`);
     await app.key("\r");
     assert.deepEqual(app.submitted, ["l"]);
     assert.equal(app.repaints(), 0);
@@ -99,6 +99,14 @@ async function startApp(): Promise<{
     repaints += 1;
     requestRepaint();
   };
+  // What the renderer wrote since the last count: every frame adds its cells.
+  let written = 0;
+  const frameWriter = terminal.renderer as unknown as { renderNative(): void };
+  const renderNative = frameWriter.renderNative.bind(frameWriter);
+  frameWriter.renderNative = () => {
+    renderNative();
+    written += terminal.getNativeStats().cellsUpdated;
+  };
   const submitted: string[] = [];
   const options: TuiOptions = {
     locale: "en-US",
@@ -120,26 +128,37 @@ async function startApp(): Promise<{
     outcome = runTuiWithRenderer(options, terminal.renderer);
     await terminal.renderOnce();
   });
+  // Asked for a frame, the renderer renders it itself, on the next tick or
+  // after a timer. The cells of a frame still in flight must not be lost, so
+  // every count waits for the renderer to come to rest.
+  const rest = async (): Promise<void> => {
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      const state = terminal.renderer.getSchedulerState();
+      if (!state.isRunning && !state.isRendering && !state.hasScheduledRender) return;
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
+    assert.fail("the renderer did not come to rest");
+  };
   // What the next frame wrote: the frame after the interface came to rest.
   const frame = async (): Promise<Frame> => {
-    let cells = -1;
     await act(async () => {
-      await terminal.flush();
+      await rest();
+      written = 0;
       await terminal.renderOnce();
-      cells = terminal.getNativeStats().cellsUpdated;
     });
-    return { cells };
+    return { cells: written };
   };
-  // The frame right after the key, before anything else renders.
+  // What the frames caused by the action wrote, the next one and any the
+  // renderer rendered itself before it.
   const frameOf = async (action: () => unknown | Promise<unknown>): Promise<Frame> => {
-    let cells = -1;
     await act(async () => {
+      await rest();
+      written = 0;
       await action();
-      await settle();
+      await rest();
       await terminal.renderOnce();
-      cells = terminal.getNativeStats().cellsUpdated;
     });
-    return { cells };
+    return { cells: written };
   };
 
   return {
