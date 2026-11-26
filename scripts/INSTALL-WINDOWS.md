@@ -63,7 +63,10 @@ Commands that only print and exit (`--version`, `--help`, `-p`, `app-server`, `d
 for the check. Without a terminal on stdin (scripts, `zcode -p`) nothing is asked: one line goes to
 stderr instead, and the next start from a terminal asks.
 
-Offline, the check gives up after 10 seconds and is not tried again for an hour.
+Offline, the check gives up after 10 seconds and is not tried again for an hour. When there is an
+update, its commits are downloaded before the question; a big one (an upstream merge) takes a
+minute or more, and the start prints `Скачиваю обновление исходников...` ("downloading the update")
+while it waits. An update that cannot be downloaded in 10 minutes is tried again the next day.
 
 To update by hand:
 
