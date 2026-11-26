@@ -525,6 +525,18 @@ function liveAccountSnapshot() {
   return { ...snapshot, planDate: "07.12", planName: "GLM Coding Max" };
 }
 
+// /usage shows the time left from the real clock: the fixture's offsets from the real now, both resets ahead.
+function snapshotOnTheRealClock() {
+  const now = Date.now();
+  const snapshot = liveAccountSnapshot();
+  const offsets = [27 * HOUR, 178 * MINUTE];   // week, then 5 hours, as in the fixture
+  return {
+    ...snapshot,
+    fetchedAt: now,
+    windows: snapshot.windows.map((window, index) => ({ ...window, nextResetAt: now + offsets[index] })),
+  };
+}
+
 test("/usage is a known local command that /help and the suggestions list", () => {
   assert.deepEqual(parseSlashCommand("/usage"), { args: "", name: "usage", rawName: "usage", type: "known" });
   assert.deepEqual(parseSlashCommand("/USAGE now"), { args: "now", name: "usage", rawName: "usage", type: "known" });
@@ -608,7 +620,7 @@ function usageFixture(reader: TuiOptions["readAccountQuota"]) {
 }
 
 test("/usage prints the report of the account without starting a session", async () => {
-  const { commandCenter, inputs } = usageFixture(async () => liveAccountSnapshot());
+  const { commandCenter, inputs } = usageFixture(async () => snapshotOnTheRealClock());
   const result = await commandCenter("/usage", {});
   assert.equal(result.mode, "build");
   assert.match(result.response ?? "", /^```\nCoding Plan usage - GLM Coding Max, renews 07\.12\n/);
