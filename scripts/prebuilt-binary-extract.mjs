@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  closeSync,
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -35,18 +37,39 @@ function resolveTarArchiveArg(archivePath, cwd) {
   return toTarPosixPath(archivePath);
 }
 
+// Windows 10 1803+ / Server 2019+ 自带 libarchive 版 tar.exe（bsdtar），可以直接读 zip。
+const resolveWindowsSystemTar = () => {
+  const systemRoot = process.env.SystemRoot ?? process.env.windir;
+  if (!systemRoot) {
+    throw new Error("Cannot locate the Windows system tar.exe: SystemRoot is not set");
+  }
+  return join(systemRoot, "System32", "tar.exe");
+};
+
+// bsdtar 按系统 ANSI 代码页解析 argv，代码页之外的字符会变成 "?"（例如非中文系统上的中文用户目录）。
+// 归档经继承的文件描述符走 stdin，解包目录经 cwd（Node 用宽字符 API 传递），argv 里不出现任何路径。
+function extractZipWithWindowsSystemTar(archivePath, extractDir) {
+  const archiveFd = openSync(archivePath, "r");
+  try {
+    runCommand(resolveWindowsSystemTar(), ["-xf", "-"], {
+      cwd: extractDir,
+      stdio: [archiveFd, "inherit", "inherit"],
+    });
+  } finally {
+    closeSync(archiveFd);
+  }
+}
+
 export function extractPrebuiltArchive({ archivePath, archiveExt, extractDir, cwd }) {
   mkdirSync(extractDir, { recursive: true });
   if (archiveExt === "zip") {
     if (process.platform === "win32") {
-      runCommand("powershell.exe", [
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        `Expand-Archive -LiteralPath '${archivePath.replaceAll("'", "''")}' -DestinationPath '${extractDir.replaceAll("'", "''")}' -Force`,
-      ]);
+      // Bugfix: 不能用 powershell.exe 的 Expand-Archive。GitHub Actions 的 windows runner 以 pwsh 执行 step，
+      // Node 继承的 PSModulePath 以 PowerShell 7 的模块目录开头，而 Windows PowerShell 5.1 按该顺序解析
+      // cmdlet，会加载只兼容 PowerShell 7 的 Microsoft.PowerShell.Archive，解包时报
+      // "Cannot find an overload for ExtractToDirectory and the argument count: 3"。
+      // 必须按绝对路径调用系统 tar.exe：不经过模块解析，也不会被 PATH 里的 GNU tar（Git Bash，不认 zip）截获。
+      extractZipWithWindowsSystemTar(archivePath, extractDir);
       return;
     }
 

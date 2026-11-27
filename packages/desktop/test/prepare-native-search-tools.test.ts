@@ -37,7 +37,10 @@ import {
   resolveNativeSearchPrebuiltPlan,
 } from "../../../scripts/native-search-tools-config.mjs";
 import { prepareNativeSearchTools } from "../../../scripts/prepare-native-search-tools.mjs";
-import { verifyPrebuiltArchiveSha256 } from "../../../scripts/prebuilt-binary-extract.mjs";
+import {
+  extractPrebuiltBinary,
+  verifyPrebuiltArchiveSha256,
+} from "../../../scripts/prebuilt-binary-extract.mjs";
 import {
   LEGACY_REMOTE_RIPGREP_ARCHIVE_SHA256_BY_TARGET,
   LEGACY_REMOTE_RIPGREP_VERSION,
@@ -47,8 +50,10 @@ import {
 type PrebuiltArtifact = {
   toolId: string;
   release: string;
+  archiveExt: string;
   archivePath: string;
   archiveSha256: string;
+  binaryName: string;
   binaryPath: string;
   downloadUrl?: string;
 };
@@ -83,6 +88,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -280,5 +286,84 @@ describe("prepareNativeSearchTools", () => {
       prepareNativeSearchTools({ prebuiltPlan: plan, source: "repository" }),
     ).rejects.toThrow(/Invalid local native search archive/u);
     expect(plan.artifacts.some((artifact) => existsSync(artifact.binaryPath))).toBe(false);
+  });
+});
+
+// GitHub Actions 的 windows runner 用 pwsh（PowerShell 7）执行 step，Node 因此继承以 PowerShell 7 模块目录
+// 开头的 PSModulePath；Windows PowerShell 5.1 按这个顺序解析 Expand-Archive，会加载只兼容 PowerShell 7 的
+// Microsoft.PowerShell.Archive。下面用同构的替身模块占住同一个解析位置，约束 zip 解包不依赖它。
+const incompatibleArchiveModuleManifest = `@{
+  RootModule = 'Microsoft.PowerShell.Archive.psm1'
+  ModuleVersion = '99.0.0'
+  GUID = '4f2a5e0b-7c3d-4b1e-9a68-0d5c7e2f1b34'
+  FunctionsToExport = @('Expand-Archive')
+  CmdletsToExport = @()
+  PowerShellVersion = '5.1'
+}
+`;
+const incompatibleArchiveModule = `function Expand-Archive {
+  throw "incompatible Microsoft.PowerShell.Archive resolved from PSModulePath"
+}
+`;
+
+describe.skipIf(process.platform !== "win32")("Windows 宿主机解包 zip 归档", () => {
+  it("PSModulePath 首位是只兼容 PowerShell 7 的 Microsoft.PowerShell.Archive 时仍能解包", async () => {
+    mocks.intranetConfigured = false;
+    const root = await createTemporaryDirectory();
+    const moduleDirectory = join(root, "pwsh-modules", "Microsoft.PowerShell.Archive");
+    mkdirSync(moduleDirectory, { recursive: true });
+    writeFileSync(
+      join(moduleDirectory, "Microsoft.PowerShell.Archive.psd1"),
+      incompatibleArchiveModuleManifest,
+    );
+    writeFileSync(
+      join(moduleDirectory, "Microsoft.PowerShell.Archive.psm1"),
+      incompatibleArchiveModule,
+    );
+    vi.stubEnv("PSModulePath", join(root, "pwsh-modules"));
+
+    const plan = (await prepareNativeSearchTools({
+      platform: "win32",
+      arch: "x64",
+      outputDir: join(root, "tools"),
+      env: {},
+    })) as PrebuiltPlan;
+
+    expect(plan.artifacts.map(({ toolId }) => toolId)).toEqual(["ugrep", "ripgrep"]);
+    for (const artifact of plan.artifacts) {
+      expect(existsSync(artifact.binaryPath)).toBe(true);
+      expect(readSources(artifact).binary.origin).toBe("repository-archive");
+    }
+  });
+
+  it("归档路径与临时目录含系统 ANSI 代码页之外的字符时仍能解包", async () => {
+    // 中文与亚美尼亚文无法同时落进任何系统 ANSI 代码页，经 argv 传给原生程序的路径必然失真。
+    const root = await createTemporaryDirectory();
+    const nonAnsiDirectory = join(root, "归档 Հայերեն");
+    mkdirSync(nonAnsiDirectory, { recursive: true });
+    const plan = resolveNativeSearchPrebuiltPlan({
+      platform: "win32",
+      arch: "x64",
+      outputDir: join(root, "tools"),
+      env: {},
+    }) as PrebuiltPlan;
+    const artifact = plan.artifacts.find(({ toolId }) => toolId === "ugrep") as PrebuiltArtifact;
+    const archivePath = join(nonAnsiDirectory, "ugrep 归档.zip");
+    cpSync(artifact.archivePath, archivePath);
+    vi.stubEnv("TEMP", nonAnsiDirectory);
+    vi.stubEnv("TMP", nonAnsiDirectory);
+    expect(tmpdir()).toBe(nonAnsiDirectory);
+
+    const binaryPath = join(nonAnsiDirectory, "工具", "ugrep.exe");
+    await extractPrebuiltBinary({
+      archiveExt: artifact.archiveExt,
+      archivePath,
+      archiveSha256: artifact.archiveSha256,
+      binaryName: artifact.binaryName,
+      binaryPath,
+      targetPlatform: "win32",
+    });
+
+    expect(readFileSync(binaryPath).length).toBeGreaterThan(0);
   });
 });
