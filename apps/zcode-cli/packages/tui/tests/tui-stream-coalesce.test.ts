@@ -360,9 +360,29 @@ test("an expensive frame makes the text refresh rarer, a cheap one faster again"
   h.buffer.dispose();
 });
 
-test("the frame cost hook measures the main thread once per rendered frame", async () => {
+test("a landing is announced, a flush with nothing to land is not", async () => {
+  const h = harness();
+  let landings = 0;
+  const remove = h.buffer.onLanded(() => {
+    landings += 1;
+  });
+  await h.send((id) => text(id, "a"));
+  assert.equal(landings, 1, "the first delta lands at once");
+  await h.send((id) => text(id, "b"));
+  assert.equal(landings, 1, "the next one is held for the interval");
+  h.buffer.flush();
+  assert.equal(landings, 2);
+  h.buffer.flush();
+  assert.equal(landings, 2, "nothing to land");
+  remove();
+  h.buffer.dispose();
+});
+
+test("the cost hook measures a landing up to the frame after it, and nothing else", async () => {
   const noted: number[] = [];
   const noop = (): void => {};
+  let landed: (() => void) | undefined;
+  let listening = 0;
   const buffer = {
     dispose: noop,
     flush: noop,
@@ -371,28 +391,47 @@ test("the frame cost hook measures the main thread once per rendered frame", asy
       noted.push(cpuMs);
     },
     offer: () => false,
+    onLanded: (listener: () => void) => {
+      listening += 1;
+      landed = listener;
+      return () => {
+        listening -= 1;
+      };
+    },
   } satisfies StreamBuffer;
   function Probe() {
     useStreamFrameCost(buffer);
     return React.createElement("text", null, "probe");
   }
-  const view = await mountProbe(React.createElement(Probe));
-  try {
+  const frames = async (count: number) => {
     await act(async () => {
-      await view.renderOnce();
-      await view.renderOnce();
+      for (let index = 0; index < count; index += 1) await view.renderOnce();
     });
-    if (typeof process.threadCpuUsage === "function") {
-      assert.ok(noted.length >= 2, `frames measured: ${noted.length}`);
-      assert.ok(noted.every((cpu) => Number.isFinite(cpu) && cpu >= 0));
-    } else {
-      assert.deepEqual(noted, []);
-    }
+  };
+  const view = await mountProbe(React.createElement(Probe));
+  const measurable = typeof process.threadCpuUsage === "function";
+  try {
+    // Frames without a landing in front of them (the spinner's) are not the stream.
+    await frames(2);
+    assert.deepEqual(noted, []);
+
+    assert.ok(landed, "the hook listens for landings");
+    await act(async () => {
+      landed?.();
+    });
+    await frames(2);
+    assert.deepEqual(
+      noted.length,
+      measurable ? 1 : 0,
+      "one landing is measured once, by the first frame after it",
+    );
+    assert.ok(noted.every((cpu) => Number.isFinite(cpu) && cpu >= 0));
   } finally {
     await act(async () => {
       view.renderer.destroy();
     });
   }
+  assert.equal(listening, measurable ? 0 : listening, "the listener is removed with the hook");
 });
 
 test("the thought view announces itself while it shows a thought that still streams", async () => {

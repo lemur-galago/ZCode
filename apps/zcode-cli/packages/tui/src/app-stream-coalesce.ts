@@ -1,17 +1,17 @@
 // Local patch (stream-coalesce): the model stream arrives as dozens of events
 // per second, and every delta used to re-render the whole transcript, while one
-// frame costs more the longer the transcript is (measured on a 32-thread
-// desktop: from 10 to 50 ms of CPU per event in a session of 5 to 30 turns, for
-// a reasoning delta as much as for text). The buffer lands deltas in the state
-// at a bounded rate instead: text at most once per interval, reasoning deltas
-// not at all while the thought is collapsed, because nothing of them is on
-// screen - they wait for the end of the reasoning, for any other event or for
-// the user expanding the thought. The order of the stream is kept: every other
-// event lands after the deltas buffered before it.
-// A frame costs more the longer the transcript is, so the interval follows the
-// frames the process actually renders: while they are cheap text refreshes up
-// to 20 times a second, while a frame costs as much as the whole budget the
-// refresh gets rarer, and the stream never takes more than its share of a core.
+// such update costs more the longer the transcript is (measured on a 32-thread
+// desktop: 23 ms of CPU at 10 turns of history, 68 ms at 30, for a reasoning
+// delta as much as for text). The buffer lands deltas in the state at a
+// bounded rate instead: text at most once per interval, reasoning deltas not at
+// all while the thought is collapsed, because nothing of them is on screen -
+// they wait for the end of the reasoning, for any other event or for the user
+// expanding the thought. The order of the stream is kept: every other event
+// lands after the deltas buffered before it.
+// The interval follows the updates the process actually renders: while they
+// are cheap text refreshes up to 20 times a second, while an update costs as
+// much as the whole budget the refresh gets rarer, and the stream never takes
+// more than its share of a core.
 import { useEffect } from "react";
 import { SessionEventType, type SessionEvent } from "@zcode/contracts";
 import { CliRenderEvents } from "@mbears/opentui-core";
@@ -46,7 +46,12 @@ export type StreamBuffer = {
   flush: () => void;
   /** Stops the timer and takes nothing more; the state is going away. */
   dispose: () => void;
-  /** CPU the main thread spent on a frame that was just rendered. */
+  /** Runs a listener whenever deltas landed in the state; the return removes it. */
+  onLanded: (listener: () => void) => () => void;
+  /**
+   * CPU the main thread spent on one landing: its React update and the frame
+   * the frame event right after it reported.
+   */
   noteFrame: (cpuMs: number) => void;
   /** The wait a buffered text delta currently has. */
   intervalMs: () => number;
@@ -113,9 +118,10 @@ export function createStreamBuffer(
   // event may have closed the thought, so the next reasoning brings a row again.
   let reasoningShown = false;
   let disposed = false;
-  // The cost of a frame, smoothed; negative until the first one was measured.
+  // The cost of a landing, smoothed; negative until the first one was measured.
   let frameCostMs = -1;
   let interval = intervalMs;
+  const landedListeners = new Set<() => void>();
 
   function flush(): void {
     if (timer !== undefined) {
@@ -130,6 +136,9 @@ export function createStreamBuffer(
     if (batch.length > 0) handlers.setMessages((current) => applyStreamDeltas(current, batch));
     if (batch.some((delta) => delta.kind === "reasoning")) reasoningShown = true;
     if (text.length > 0) handlers.setLiveModelText((current) => current + text);
+    if (batch.length > 0 || text.length > 0) {
+      for (const listener of [...landedListeners]) listener();
+    }
   }
 
   const showBuffered = (): void => {
@@ -176,6 +185,13 @@ export function createStreamBuffer(
       if (timer !== undefined) clearTimeout(timer);
       timer = undefined;
       expandedThoughtListeners.delete(showBuffered);
+      landedListeners.clear();
+    },
+    onLanded(listener) {
+      landedListeners.add(listener);
+      return () => {
+        landedListeners.delete(listener);
+      };
     },
     noteFrame(cpuMs) {
       if (!Number.isFinite(cpuMs) || cpuMs <= 0) return;
@@ -190,9 +206,11 @@ export function createStreamBuffer(
 }
 
 /**
- * Feeds the buffer the CPU the main thread spent since the previous frame.
- * That time is what the previous frame cost plus what was committed for the
- * next one, which is the cost the next stream refresh will cause as well.
+ * Feeds the buffer the CPU the main thread spent on a landing: from the moment
+ * deltas landed in the state to the frame event right after it, which covers
+ * the React update and the frame it asked for. Frames without a landing in
+ * front of them - the spinner's, for example - say nothing about the stream:
+ * averaged in, they would halve the estimate and double the refresh rate.
  */
 export function useStreamFrameCost(streamBuffer: StreamBuffer): void {
   const renderer = useRenderer();
@@ -200,15 +218,20 @@ export function useStreamFrameCost(streamBuffer: StreamBuffer): void {
     // The CPU time of a thread is not readable everywhere: the buffer then
     // keeps its base interval.
     if (typeof process.threadCpuUsage !== "function") return undefined;
-    let previous = process.threadCpuUsage();
+    let landed: ReturnType<typeof process.threadCpuUsage> | undefined;
+    const removeLandingListener = streamBuffer.onLanded(() => {
+      landed = process.threadCpuUsage();
+    });
     const onFrame = (): void => {
-      const spent = process.threadCpuUsage(previous);
-      previous = process.threadCpuUsage();
+      if (!landed) return;
+      const spent = process.threadCpuUsage(landed);
+      landed = undefined;
       streamBuffer.noteFrame((spent.user + spent.system) / 1000);
     };
     renderer.on(CliRenderEvents.FRAME, onFrame);
     return () => {
       renderer.off(CliRenderEvents.FRAME, onFrame);
+      removeLandingListener();
     };
   }, [renderer, streamBuffer]);
 }
