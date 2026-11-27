@@ -12,6 +12,7 @@ import { createRequire } from "node:module";
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { pinProductionReact } from "./portable-production-react.mjs";
 
 const args = process.argv.slice(2);
 const readArg = (name, fallback) => {
@@ -97,6 +98,15 @@ for (const file of manifest.files) {
   await cp(assets[`${seaTuiAssetPrefix}${file.path}`], destination);
 }
 await rm(stagingDirectory, { recursive: true, force: true });
+
+// react, react-reconciler and scheduler pick their build from NODE_ENV when their entry files
+// load, and a tab starts without it: the development build, whose checks cost main-thread time on
+// every stream landing. The entries are pinned to the production build instead; NODE_ENV of the
+// agent process stays as it is, because the tools inherit it.
+const pinnedReactEntries = await pinProductionReact({
+  agentDirectory: resolve(PACKAGE_ROOT, "agent"),
+  filePaths: manifest.files.map((file) => file.path),
+});
 
 // playwright-core is a CLI external (browser-use); copy from the cli package's resolution.
 const requireFromCli = createRequire(resolve(SRC, "apps/zcode-cli/packages/cli/package.json"));
@@ -193,6 +203,8 @@ await writeFile(
   [
     `ZCode CLI ${cliVersion} (source ${packageJson.version}) — build ${versionId} of the fork lemur-galago/ZCode.`,
     "All local patches are part of the git history of the fork.",
+    "The TUI runs the production build of React, react-reconciler and scheduler: their entry files",
+    "in agent\\node_modules are pinned to it. NODE_ENV of the agent process is not changed.",
     "Update: run zcode — the launcher checks the fork once per day and offers to update.",
     "",
   ].join("\r\n"),
@@ -207,6 +219,7 @@ await writeFile(
 
 console.log("tui dist files:", (await readdir(resolve(PACKAGE_ROOT, "agent/node_modules/@zcode/tui/dist"))).length);
 console.log("check-update present:", await pathExists(resolve(PACKAGE_ROOT, "agent/check-update.mjs")));
+console.log("react entries pinned to the production build:", pinnedReactEntries.length);
 console.log(
   "keyring native present:",
   await pathExists(

@@ -91,5 +91,6 @@ Delete `%LOCALAPPDATA%\ZCodeCLI-src` by hand when you no longer need the sources
 | [zcode](zcode) | Shell wrapper for Git Bash, installed as `bin\zcode` |
 | [check-update.mjs](check-update.mjs) | The daily update check. Copied into every installed version |
 | [assemble-portable.mjs](assemble-portable.mjs) | Packs a built tree into the portable folder `ZCode-CLI-Portable` |
+| [portable-production-react.mjs](portable-production-react.mjs) | Step of the assembler: the TUI of the package loads the production build of React whatever `NODE_ENV` says; the environment of the agent process is not changed. Test: `node --test scripts/test/portable-production-react.test.mjs` |
 
 The CLI shares the `~\.zcode` storage with the ZCode desktop app.
