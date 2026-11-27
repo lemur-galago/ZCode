@@ -4,6 +4,8 @@ import React from "react";
 import { applySessionEventToState } from "./app-events.js";
 import { describeSessionEvent } from "./state.js";
 import { isSubagentToolMirror } from "./app-subagent-events.js";
+// Local patch (stream-coalesce).
+import type { StreamBuffer } from "./app-stream-coalesce.js";
 
 type SessionEventHandlers = Parameters<typeof applySessionEventToState>[1];
 
@@ -50,6 +52,8 @@ type SessionEventApplierInput = SessionEventHandlers & {
   copy: TuiCopy;
   getMainSessionId?: () => string | undefined;
   setLastEvent: (event: string) => void;
+  // Local patch (stream-coalesce): lands stream deltas at a bounded rate.
+  streamBuffer?: StreamBuffer;
 };
 
 /**
@@ -70,6 +74,11 @@ export function applyMainSessionEvent(
   if (!isMainSessionEvent(event, input.getMainSessionId?.())) return false;
   if (!rememberSessionEvent(applied, event)) return false;
   input.setLastEvent(describeSessionEvent(event));
+  // Local patch (stream-coalesce): a delta goes into the buffer; every other
+  // event lands after the deltas buffered before it.
+  const streamBuffer = input.streamBuffer;
+  if (streamBuffer?.offer(event)) return true;
+  streamBuffer?.flush();
   applySessionEventToState(event, input, input.copy);
   return true;
 }

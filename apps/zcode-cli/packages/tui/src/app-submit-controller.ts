@@ -19,6 +19,8 @@ export function useSubmitValue(input: {
   busy: boolean;
   draftAttachmentsRef: React.MutableRefObject<DraftAttachment[]>;
   emptyPromptStatus: string;
+  // Local patch (stream-coalesce): lands the buffered stream deltas first.
+  flushStream?: () => void;
   messageInsertIndex: number;
   options: TuiOptions;
   resolveSubmittedText: (submittedValue: string) => string;
@@ -44,6 +46,7 @@ export function useSubmitValue(input: {
         input.setStatus(input.emptyPromptStatus);
         return;
       }
+      input.flushStream?.();
 
       if (input.busy) {
         await submitDuringActiveTurn({

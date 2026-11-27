@@ -8,6 +8,46 @@ import {
 } from "./app-transcript-stream.js";
 import { stringField } from "./state.js";
 
+// Local patch (stream-coalesce): the status of a delta kind. It is the same for
+// every delta of a kind, so React skips all but the first.
+export const STREAMING_REASONING_STATUS = "Streaming model reasoning...";
+export const STREAMING_RESPONSE_STATUS = "Streaming model response...";
+
+// Local patch (stream-coalesce): the delta a ModelStreaming payload carries,
+// and its effect on a transcript, shared with the stream buffer that lands
+// deltas at a bounded rate (app-stream-coalesce.ts).
+export type StreamingDelta = {
+  assistantMessageId: string | undefined;
+  delta: string;
+  kind: "reasoning" | "text";
+};
+
+export function streamingDeltaOf(
+  payload: Record<string, unknown>,
+): StreamingDelta | undefined {
+  const kind = stringField(payload, "kind");
+  const delta = stringField(payload, "delta") ?? "";
+  if (kind === "reasoning_delta") {
+    return {
+      assistantMessageId: stringField(payload, "assistantMessageId"),
+      delta,
+      kind: "reasoning",
+    };
+  }
+  if (kind === "text_delta" || (!kind && delta)) {
+    return { assistantMessageId: stringField(payload, "assistantMessageId"), delta, kind: "text" };
+  }
+  return undefined;
+}
+
+/** Appends one delta to the transcript; the same array when the delta changes nothing. */
+export function appendStreamingDelta(messages: Message[], delta: StreamingDelta): Message[] {
+  if (!delta.assistantMessageId || delta.delta.length === 0) return messages;
+  return delta.kind === "reasoning"
+    ? appendStreamingThoughtDelta(messages, delta.assistantMessageId, delta.delta)
+    : appendStreamingTextDelta(messages, delta.assistantMessageId, delta.delta);
+}
+
 export function applyModelStreamingEvent(
   payload: Record<string, unknown>,
   handlers: {
@@ -20,7 +60,7 @@ export function applyModelStreamingEvent(
   const kind = stringField(payload, "kind");
   const delta = stringField(payload, "delta") ?? "";
   if (kind === "reasoning_start") {
-    handlers.setStatus("Streaming model reasoning...");
+    handlers.setStatus(STREAMING_REASONING_STATUS);
     return;
   }
   if (kind === "reasoning_delta") {
@@ -30,7 +70,7 @@ export function applyModelStreamingEvent(
         appendStreamingThoughtDelta(current, assistantMessageId, delta),
       );
     }
-    handlers.setStatus("Streaming model reasoning...");
+    handlers.setStatus(STREAMING_REASONING_STATUS);
     return;
   }
   if (kind === "reasoning_end") {
@@ -62,7 +102,7 @@ export function applyModelStreamingEvent(
     } else {
       handlers.setLiveModelText((current) => `${current}${delta}`);
     }
-    handlers.setStatus("Streaming model response...");
+    handlers.setStatus(STREAMING_RESPONSE_STATUS);
     return;
   }
   if (kind === "finish") {

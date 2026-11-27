@@ -4,7 +4,7 @@
 // per-process commit number, so the commit size comes from a short PowerShell
 // probe; the working set is read in-process.
 import { execFile } from "node:child_process";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { StatusNotice } from "./app-input-status.js";
 
 export type ProcessMemorySample = {
@@ -24,7 +24,12 @@ export type ProcessMemoryUsage = {
 
 export type ReadProcessMemory = () => Promise<ProcessMemorySample>;
 
-export const PROCESS_MEMORY_SAMPLE_INTERVAL_MS = 10_000;
+// Local patch (process-memory-idle-interval): each sample starts a
+// powershell.exe, which costs ~230 ms of CPU in that process, so the interval
+// is 30 s while a turn runs (memory grows then) and 60 s in an idle tab - it
+// used to be 10 s always, 2.3% of one core per open tab for nothing.
+export const PROCESS_MEMORY_SAMPLE_INTERVAL_MS = 30_000;
+export const PROCESS_MEMORY_IDLE_SAMPLE_INTERVAL_MS = 60_000;
 export const PROCESS_MEMORY_FIRST_SAMPLE_DELAY_MS = 1_000;
 export const PROCESS_MEMORY_RETRY_INTERVAL_MS = 30_000;
 export const PROCESS_MEMORY_PROBE_TIMEOUT_MS = 5_000;
@@ -133,13 +138,12 @@ export function useProcessMemory(options: {
   firstSampleDelayMs?: number;
   retryIntervalMs?: number;
 } = {}): ProcessMemoryUsage | undefined {
-  const {
-    read = readProcessMemory,
-    intervalMs = PROCESS_MEMORY_SAMPLE_INTERVAL_MS,
-    firstSampleDelayMs = PROCESS_MEMORY_FIRST_SAMPLE_DELAY_MS,
-    retryIntervalMs = PROCESS_MEMORY_RETRY_INTERVAL_MS,
-  } = options;
+  const { read = readProcessMemory } = options;
   const [usage, setUsage] = useState<ProcessMemoryUsage | undefined>(undefined);
+  // The timings are read when a sample is scheduled, not when the options
+  // change, so a changed interval does not restart the polling with a sample.
+  const settings = useRef(options);
+  settings.current = options;
 
   useEffect(() => {
     let disposed = false;
@@ -158,20 +162,20 @@ export function useProcessMemory(options: {
         if (next) {
           setUsage((current) => (sameProcessMemoryUsage(current, next) ? current : next));
         }
-        schedule(intervalMs);
+        schedule(settings.current.intervalMs ?? PROCESS_MEMORY_SAMPLE_INTERVAL_MS);
       } catch {
         if (disposed) return;
-        schedule(retryIntervalMs);
+        schedule(settings.current.retryIntervalMs ?? PROCESS_MEMORY_RETRY_INTERVAL_MS);
       }
     }
 
-    schedule(firstSampleDelayMs);
+    schedule(settings.current.firstSampleDelayMs ?? PROCESS_MEMORY_FIRST_SAMPLE_DELAY_MS);
 
     return () => {
       disposed = true;
       if (timer) clearTimeout(timer);
     };
-  }, [firstSampleDelayMs, intervalMs, read, retryIntervalMs]);
+  }, [read]);
 
   return usage;
 }

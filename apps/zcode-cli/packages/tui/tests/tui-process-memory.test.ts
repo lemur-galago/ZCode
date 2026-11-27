@@ -12,6 +12,8 @@ import {
   processMemoryStatusLabel,
 } from "../src/app-input-status.js";
 import {
+  PROCESS_MEMORY_IDLE_SAMPLE_INTERVAL_MS,
+  PROCESS_MEMORY_SAMPLE_INTERVAL_MS,
   createProcessMemoryUsage,
   formatProcessMemoryBytes,
   processMemoryLevel,
@@ -424,6 +426,55 @@ test("keeps the last usage when a sample fails and asks again later", async () =
     await releaseProbe(view, probe, sample);
     assert.equal(seen.at(-1), seen[1]);
     assert.deepEqual([...new Set(seen)].length, 2);
+  } finally {
+    await act(async () => {
+      view.renderer.destroy();
+    });
+  }
+});
+
+// Local patch (process-memory-idle-interval).
+
+test("the probe runs every 30 s while a turn runs and every 60 s in an idle tab", () => {
+  assert.equal(PROCESS_MEMORY_SAMPLE_INTERVAL_MS, 30_000);
+  assert.equal(PROCESS_MEMORY_IDLE_SAMPLE_INTERVAL_MS, 60_000);
+});
+
+test("the next sample waits the interval that is current when it is scheduled", async () => {
+  const probe = gatedProbe();
+  let setBusy: (busy: boolean) => void = () => {};
+  function Probe({ busy }: { busy: boolean }) {
+    useProcessMemory({ firstSampleDelayMs: 400, intervalMs: busy ? 5 : 80, read: probe.read });
+    return React.createElement("text", null, "probe");
+  }
+  function Host() {
+    const [busy, setBusyState] = React.useState(true);
+    setBusy = setBusyState;
+    return React.createElement(Probe, { busy });
+  }
+  const view = await mountProbe(React.createElement(Host));
+  const sample = { commitBytes: 500 * MIB, workingSetBytes: 100 * MIB };
+
+  try {
+    await waitProbeCalls(view, probe, 1);
+    await releaseProbe(view, probe, sample);
+
+    // The interval changes from 5 ms to 80 ms. That is not a restart of the
+    // polling: the second sample comes with the 5 ms timer scheduled before,
+    // not 400 ms later as a first sample would.
+    await act(async () => {
+      setBusy(false);
+      await sleep(25);
+    });
+    await waitProbeCalls(view, probe, 2);
+    await releaseProbe(view, probe, sample);
+
+    // The sample scheduled while idle waits the idle interval.
+    await act(async () => {
+      await sleep(40);
+    });
+    assert.equal(probe.state.calls, 2);
+    await waitProbeCalls(view, probe, 3);
   } finally {
     await act(async () => {
       view.renderer.destroy();

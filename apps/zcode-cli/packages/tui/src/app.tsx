@@ -23,6 +23,8 @@ import { type StatusNotice } from "./app-input-status.js";
 import { useModeCommandController } from "./app-mode-command.js";
 import { useModelCommandController } from "./app-model-command.js";
 import {
+  PROCESS_MEMORY_IDLE_SAMPLE_INTERVAL_MS,
+  PROCESS_MEMORY_SAMPLE_INTERVAL_MS,
   STATUS_NOTICE_DURATION_MS,
   processMemoryNotice,
   useProcessMemory,
@@ -56,6 +58,8 @@ import type {
 } from "./app-model.js";
 import { useTuiThemeSync } from "./app-theme-sync.js";
 import { useSessionEventApplier } from "./app-session-event-handler.js";
+// Local patch (stream-coalesce).
+import { createStreamBuffer, useStreamFrameCost } from "./app-stream-coalesce.js";
 import { useTuiWorkflowRuns } from "./app-workflow-controller.js";
 import { useTuiApplyResult } from "./app-result.js";
 import { useSubagents } from "./app-subagents.js";
@@ -117,6 +121,14 @@ export function TuiApp({
   const [networkRequests, setNetworkRequests] = useState<NetworkRequest[]>([]);
   const [modifiedFiles, setModifiedFiles] = useState<ModifiedFileStat[]>([]);
   const [liveModelText, setLiveModelText] = useState("");
+  // Local patch (stream-coalesce): stream deltas land in the transcript at a
+  // bounded rate instead of one re-render of everything per event.
+  const streamBuffer = useMemo(
+    () => createStreamBuffer({ setLiveModelText, setMessages, setStatus }),
+    [setLiveModelText, setMessages, setStatus],
+  );
+  useEffect(() => () => streamBuffer.dispose(), [streamBuffer]);
+  useStreamFrameCost(streamBuffer);
   const [queuedInputs, setQueuedInputs] = useState<QueuedInput[]>([]);
   const [selection, setSelection] = useState<SelectionState | undefined>(() =>
     createSelectionState(initialResult?.selection),
@@ -245,9 +257,12 @@ export function TuiApp({
     setUsage,
     setWorkingDirectories,
     workspaceDirectory: options.workspaceDirectory,
+    // Local patch (stream-coalesce): a result is appended after the buffered deltas.
+    flushStream: streamBuffer.flush,
   });
 
   const applySessionEvent = useSessionEventApplier({
+    streamBuffer,
     subscribeSessionEvents: options.subscribeSessionEvents,
     observeSessionEvent: subagents.onEvent,
     copy: copy.tui,
@@ -311,6 +326,8 @@ export function TuiApp({
     busy,
     draftAttachmentsRef,
     emptyPromptStatus: copy.tui.input.typePrompt,
+    // Local patch (stream-coalesce): the prompt is placed after the buffered deltas.
+    flushStream: streamBuffer.flush,
     messageInsertIndex: messages.length,
     options,
     resolveSubmittedText,
@@ -501,7 +518,12 @@ export function TuiApp({
   // Local patch (process-memory-indicator): the session's memory usage in the
   // status row. A click shows, for a while, the command that restarts the
   // session — the only way to release the memory it has accumulated.
-  const processMemory = useProcessMemory({ read: options.readProcessMemory });
+  // Local patch (process-memory-idle-interval): memory grows while a turn
+  // runs, so the probe is more frequent then; an idle tab reads it once a minute.
+  const processMemory = useProcessMemory({
+    read: options.readProcessMemory,
+    intervalMs: busy ? PROCESS_MEMORY_SAMPLE_INTERVAL_MS : PROCESS_MEMORY_IDLE_SAMPLE_INTERVAL_MS,
+  });
   const [statusNotice, setStatusNotice] = useState<StatusNotice | undefined>(undefined);
   const statusNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Local patch (account-quota-indicator): the segment whose notice is shown.

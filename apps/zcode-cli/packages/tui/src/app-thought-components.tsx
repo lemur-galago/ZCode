@@ -3,6 +3,8 @@ import type { TuiCopy } from "@zcode/i18n";
 import type { ThoughtTranscriptPart } from "./app-model.js";
 import { palette } from "./app-model.js";
 import { DEFAULT_TUI_COPY } from "./app-locale.js";
+// Local patch (stream-coalesce).
+import { watchExpandedStreamingThought } from "./app-stream-coalesce.js";
 
 const h = React.createElement as (
   type: React.ElementType | string,
@@ -21,6 +23,15 @@ export function ThoughtTranscriptPartView({
   part: ThoughtTranscriptPart;
 }): React.ReactElement {
   const [expanded, setExpanded] = React.useState(false);
+  // Local patch (stream-coalesce): the text of an expanded thought is on
+  // screen, so the stream buffer has to keep it current; a collapsed one waits
+  // for the end of the reasoning. Only a thought that still streams counts.
+  const view = React.useMemo(() => Symbol("thought-view"), []);
+  const streaming = part.status === "thinking";
+  React.useEffect(() => {
+    if (!expanded || !streaming) return undefined;
+    return watchExpandedStreamingThought(view);
+  }, [expanded, streaming, view]);
   return h(ThoughtTranscriptPartFrame, {
     copy,
     expanded,

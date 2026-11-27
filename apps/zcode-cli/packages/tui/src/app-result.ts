@@ -48,11 +48,14 @@ type TuiApplyResultInput = {
   setTraceId: (traceId: string | undefined) => void;
   setUsage: React.Dispatch<React.SetStateAction<ModelUsageSummary | undefined>>;
   workspaceDirectory?: string;
+  // Local patch (stream-coalesce): lands the buffered stream deltas first.
+  flushStream?: () => void;
 };
 
 export function useTuiApplyResult(input: TuiApplyResultInput) {
   return React.useCallback(
     (result: TuiSubmitPromptResult, preserveTurnState = false) => {
+      input.flushStream?.();
       const resultCopy = getZCodeCopy(result.locale ?? input.fallback.locale).tui;
       input.setMode(result.mode ?? input.fallback.mode);
       input.setModel(result.model ?? input.fallback.model);

@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+import { watch, type FSWatcher } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { basename, dirname } from "node:path";
 import {
   ModelConfigRules,
   ProviderConfigMap,
@@ -20,8 +22,23 @@ export interface NodePersonalProviderConfigRepositoryOptions {
   readonly importLegacy?: () => Promise<ProviderConfigLayerUpdate | null>;
   readonly onRecovery?: (event: PersonalProviderConfigRecoveryEvent) => void;
   readonly onPollingError?: (error: unknown) => void;
+  /**
+   * Interval of the fallback read. Local patch (provider-config-watch): a file
+   * watcher reports a change at once, the timed read only backs it up, so the
+   * default is a minute instead of a second. `false` switches off both, as it
+   * switched off the polling before.
+   */
   readonly pollingIntervalMs?: number | false;
 }
+
+// Local patch (provider-config-watch): the file used to be read, parsed,
+// validated and hashed once a second in every process that holds the provider
+// config, only to notice a change made elsewhere (a login in another terminal).
+// The directory of the file is watched instead; the timed read stays as the
+// fallback for a platform or a moment where watching is unavailable.
+const WATCH_DEBOUNCE_MS = 150;
+const DEFAULT_POLLING_INTERVAL_MS = 60_000;
+const WATCHED_READ_RETRIES = 3;
 
 export interface PersonalProviderConfigRecoveryEvent {
   readonly error: unknown;
@@ -41,15 +58,22 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
   #pollingErrorActive = false;
   #observedRevision: string | null = null;
   #disposed = false;
+  // Local patch (provider-config-watch).
+  readonly #fileName: string;
+  #watcher: FSWatcher | null = null;
+  #watchDebounce: ReturnType<typeof setTimeout> | null = null;
+  #watchRetries = 0;
+  #pollAgain = false;
 
   constructor(options: NodePersonalProviderConfigRepositoryOptions) {
     if (!options.filePath.trim()) throw new Error("Personal Provider Config filePath 不能为空");
     this.#filePath = options.filePath;
+    this.#fileName = basename(options.filePath);
     this.#commitGuard = options.commitGuard;
     this.#importLegacy = options.importLegacy;
     this.#onRecovery = options.onRecovery;
     this.#onPollingError = options.onPollingError;
-    this.#pollingIntervalMs = options.pollingIntervalMs ?? 1_000;
+    this.#pollingIntervalMs = options.pollingIntervalMs ?? DEFAULT_POLLING_INTERVAL_MS;
     if (this.#pollingIntervalMs !== false && this.#pollingIntervalMs <= 0) {
       throw new Error("Personal Provider Config pollingIntervalMs 必须大于 0");
     }
@@ -109,6 +133,7 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
     this.#disposed = true;
     if (this.#pollingTimer) clearTimeout(this.#pollingTimer);
     this.#pollingTimer = null;
+    this.#stopWatching();
     this.#listeners.clear();
   }
 
@@ -182,13 +207,9 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
 
   #ensurePolling(): void {
     // 轮询在飞时 timer 已清空；显式 read/update 的 finally 不能再排入第二轮。
-    if (
-      this.#pollingIntervalMs === false ||
-      this.#pollingTimer ||
-      this.#pollingInFlight ||
-      this.#disposed
-    )
-      return;
+    if (this.#pollingIntervalMs === false || this.#disposed) return;
+    this.#ensureWatching();
+    if (this.#pollingTimer || this.#pollingInFlight) return;
     this.#pollingTimer = setTimeout(() => {
       this.#pollingTimer = null;
       void this.#pollOnce();
@@ -196,7 +217,64 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
     this.#pollingTimer.unref?.();
   }
 
-  async #pollOnce(): Promise<void> {
+  // Local patch (provider-config-watch): the directory is watched rather than
+  // the file, so a file that does not exist yet or is replaced atomically is
+  // noticed as well. A failed or lost watcher is tried again with every
+  // fallback read; until then the timed read carries the change detection.
+  #ensureWatching(): void {
+    if (this.#watcher || this.#disposed || this.#pollingIntervalMs === false) return;
+    try {
+      const watcher = watch(
+        dirname(this.#filePath),
+        { persistent: false },
+        (_eventType, filename) => {
+          // Without a name (some platforms) the change may be the file.
+          if (filename !== null && basename(String(filename)) !== this.#fileName) return;
+          this.#scheduleWatchedPoll();
+        },
+      );
+      watcher.on("error", () => this.#stopWatching());
+      this.#watcher = watcher;
+    } catch {
+      // No directory to watch, or watching is unavailable: the fallback read stays.
+    }
+  }
+
+  #stopWatching(): void {
+    if (this.#watchDebounce) clearTimeout(this.#watchDebounce);
+    this.#watchDebounce = null;
+    const watcher = this.#watcher;
+    this.#watcher = null;
+    try {
+      watcher?.close();
+    } catch {
+      // Already closed by the platform.
+    }
+  }
+
+  #scheduleWatchedPoll(): void {
+    if (this.#disposed || this.#pollingIntervalMs === false) return;
+    // One write raises several events: read once they have settled.
+    if (this.#watchDebounce) clearTimeout(this.#watchDebounce);
+    this.#watchDebounce = setTimeout(() => {
+      this.#watchDebounce = null;
+      this.#requestPoll();
+    }, WATCH_DEBOUNCE_MS);
+    this.#watchDebounce.unref?.();
+  }
+
+  #requestPoll(): void {
+    if (this.#disposed || this.#pollingIntervalMs === false) return;
+    if (this.#pollingInFlight) {
+      this.#pollAgain = true;
+      return;
+    }
+    if (this.#pollingTimer) clearTimeout(this.#pollingTimer);
+    this.#pollingTimer = null;
+    void this.#pollOnce(true);
+  }
+
+  async #pollOnce(watched = false): Promise<void> {
     this.#pollingInFlight = true;
     const writeGeneration = this.#writeGeneration;
     try {
@@ -204,12 +282,20 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
       // 去掉读锁后，旧轮询可能晚于本进程保存返回；丢弃它，避免版本倒退及重复通知。
       if (writeGeneration !== this.#writeGeneration) return;
       this.#pollingErrorActive = false;
+      this.#watchRetries = 0;
       if (this.#disposed || snapshot.revision === this.#observedRevision) return;
       this.#observedRevision = snapshot.revision;
       this.#emit("poll-changed");
     } catch (error) {
       // 成功保存也使旧轮询的失败失效，不能在新版本之后再发布旧读操作的故障。
       if (this.#disposed || writeGeneration !== this.#writeGeneration) return;
+      // A read right after a change can catch a file that is still being
+      // written: give the writer time before it counts as a failure.
+      if (watched && this.#watchRetries < WATCHED_READ_RETRIES) {
+        this.#watchRetries += 1;
+        this.#scheduleWatchedPoll();
+        return;
+      }
       if (!this.#pollingErrorActive) {
         this.#pollingErrorActive = true;
         try {
@@ -221,7 +307,12 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
       }
     } finally {
       this.#pollingInFlight = false;
-      this.#ensurePolling();
+      if (this.#pollAgain) {
+        this.#pollAgain = false;
+        this.#requestPoll();
+      } else {
+        this.#ensurePolling();
+      }
     }
   }
 
