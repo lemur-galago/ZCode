@@ -79,13 +79,12 @@ export function useModeCommandController(draft: string): {
     [filteredOptions, selection],
   );
 
-  return {
-    filteredOptions,
-    reconcileDraft,
-    selectedOption,
-    selection,
-    setSelection,
-  };
+  // Local patch (panel-memo): the same object for as long as its members are,
+  // as in the other command controllers.
+  return React.useMemo(
+    () => ({ filteredOptions, reconcileDraft, selectedOption, selection, setSelection }),
+    [filteredOptions, reconcileDraft, selectedOption, selection, setSelection],
+  );
 }
 
 function formatModeLabel(mode: TuiSwitchableMode): string {

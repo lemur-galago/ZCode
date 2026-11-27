@@ -187,24 +187,43 @@ export function useSubagents(options: TuiOptions) {
     }
   }, [options]);
 
-  return {
-    directory,
-    directoryError,
-    selected:
-      selected &&
-      ([...directory.running, ...directory.ended.items].find(
-        (item) => item.childSessionId === selected.childSessionId,
-      ) ??
-        selected),
-    transcript,
-    loading,
-    error,
-    open,
-    back,
-    onEvent,
-    loadMore,
-    refreshDirectory,
-  };
+  // Local patch (panel-memo): one object for as long as its members are the
+  // same. The sidebar receives the controller as a prop and is drawn again
+  // whenever a prop changes; a fresh object on every render of the app drew it
+  // on every landing of stream text.
+  return React.useMemo(
+    () => ({
+      directory,
+      directoryError,
+      selected:
+        selected &&
+        ([...directory.running, ...directory.ended.items].find(
+          (item) => item.childSessionId === selected.childSessionId,
+        ) ??
+          selected),
+      transcript,
+      loading,
+      error,
+      open,
+      back,
+      onEvent,
+      loadMore,
+      refreshDirectory,
+    }),
+    [
+      directory,
+      directoryError,
+      selected,
+      transcript,
+      loading,
+      error,
+      open,
+      back,
+      onEvent,
+      loadMore,
+      refreshDirectory,
+    ],
+  );
 }
 
 export type SubagentsController = ReturnType<typeof useSubagents>;

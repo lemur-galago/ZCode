@@ -83,7 +83,8 @@ export function TuiApp({
   const initialLoginRequired = initialResult?.loginRequired ?? options.loginRequired ?? false;
   const initialLocale = options.locale ?? "en-US";
   const initialCopy = getZCodeCopy(initialLocale).tui;
-  useTuiThemeSync(options);
+  // Local patch (transcript-row-memo): the theme travels down as a prop.
+  const theme = useTuiThemeSync(options);
   const [messages, setMessages] = useState<Message[]>(() =>
     initialResult
       ? appendAgentResult([], initialResult, { workspaceDirectory: options.workspaceDirectory })
@@ -157,7 +158,13 @@ export function TuiApp({
   const modifiedFileToolCallIdsRef = useRef(new Set<string>());
   const toolNamesByIdRef = useRef(new Map<string, string>());
 
-  const slashCommands = options.slashCommands ?? [];
+  // Local patch (panel-memo): one list for a session without slash commands.
+  // A fresh empty one on every render reached the setter of the composer draft
+  // through its dependencies, and that setter is a prop of the memoized composer.
+  const slashCommands = useMemo(
+    () => options.slashCommands ?? [],
+    [options.slashCommands],
+  );
   const [effortOptions, setEffortOptions] = useState<NonNullable<TuiOptions["effortOptions"]>>(
     () => initialResult?.effortOptions ?? options.effortOptions ?? [],
   );
@@ -554,7 +561,10 @@ export function TuiApp({
   // account in the status row. A click shows the details as a notice and asks
   // for a fresh read; while that notice is shown it follows the quota.
   const quotaProvider = modelDisplayParts(model).provider;
-  const accountQuota = useAccountQuota({
+  // Local patch (panel-memo): the quota and its refresh are taken apart: the
+  // object the hook returns is a fresh one on every render, and the click
+  // handler below is a prop of the memoized composer.
+  const { refresh: refreshAccountQuota, usage: accountQuotaUsage } = useAccountQuota({
     providerId: quotaProvider === UNKNOWN_MODEL_FIELD ? undefined : quotaProvider,
     read: options.readAccountQuota,
   });
@@ -562,16 +572,16 @@ export function TuiApp({
     if (subagents.selected) return;
     showStatusNotice(
       "quota",
-      accountQuota.usage ? accountQuotaNotice(accountQuota.usage) : accountQuotaPendingNotice(),
+      accountQuotaUsage ? accountQuotaNotice(accountQuotaUsage) : accountQuotaPendingNotice(),
     );
-    accountQuota.refresh();
-  }, [accountQuota, showStatusNotice, subagents.selected]);
+    refreshAccountQuota();
+  }, [accountQuotaUsage, refreshAccountQuota, showStatusNotice, subagents.selected]);
   useEffect(() => {
     if (statusNoticeOwnerRef.current !== "quota") return;
     setStatusNotice(
-      accountQuota.usage ? accountQuotaNotice(accountQuota.usage) : accountQuotaPendingNotice(),
+      accountQuotaUsage ? accountQuotaNotice(accountQuotaUsage) : accountQuotaPendingNotice(),
     );
-  }, [accountQuota.usage]);
+  }, [accountQuotaUsage]);
 
   useTuiKeyboardControls({
     readOnlyView: subagents.selected ? { back: subagents.back } : undefined,
@@ -655,8 +665,8 @@ export function TuiApp({
     processMemory,
     statusNotice,
     onStatusMemoryClick: showStatusMemoryNotice,
-    // Local patch (account-quota-indicator).
-    accountQuota: accountQuota.usage,
+    // Local patch (account-quota-indicator, panel-memo).
+    accountQuota: accountQuotaUsage,
     onStatusQuotaClick: showStatusQuotaNotice,
     onStatusAddDirClick: openStatusDirPicker,
     onStatusDirClick: submitStatusDirList,
@@ -671,6 +681,8 @@ export function TuiApp({
     toggleSidebarSection: sidebar.toggleSidebarSection,
     traceId,
     terminalWidth: sidebar.terminalWidth,
+    // Local patch (transcript-row-memo).
+    theme,
     usage,
     workflowCardsByToolCallId: workflowRuns.cardsByToolCallId,
     expandedWorkflowRunIds: workflowRuns.expandedRunIds,

@@ -298,6 +298,8 @@ test("a notice keeps the command whole on a narrow terminal", () => {
 // so each sample is an event the test controls.
 function gatedProbe() {
   const state = { calls: 0 };
+  // Local patch (panel-memo): when each call came, on the clock of the test.
+  const calledAt: number[] = [];
   const pending: Array<{
     reject: (error: Error) => void;
     resolve: (sample: ProcessMemorySample) => void;
@@ -306,6 +308,7 @@ function gatedProbe() {
     new Promise<ProcessMemorySample>((resolve, reject) => {
       pending.push({ reject, resolve });
       state.calls += 1;
+      calledAt.push(performance.now());
     });
   const release = (step: ProcessMemorySample | Error): void => {
     const gate = pending.shift();
@@ -313,7 +316,7 @@ function gatedProbe() {
     if (step instanceof Error) gate.reject(step);
     else gate.resolve(step);
   };
-  return { read, release, state };
+  return { calledAt, read, release, state };
 }
 
 type Probe = ReturnType<typeof gatedProbe>;
@@ -467,14 +470,18 @@ test("the next sample waits the interval that is current when it is scheduled", 
       await sleep(25);
     });
     await waitProbeCalls(view, probe, 2);
+    const releasedAt = performance.now();
     await releaseProbe(view, probe, sample);
 
-    // The sample scheduled while idle waits the idle interval.
-    await act(async () => {
-      await sleep(40);
-    });
-    assert.equal(probe.state.calls, 2);
+    // The sample scheduled while idle waits the idle interval. It is read off
+    // the clock and not by sleeping less than the interval and counting: a
+    // busy machine stretches a sleep, and the timers of Windows tick every
+    // 15.6 ms, so the third call could land inside such a sleep. With the
+    // busy interval it would come a few milliseconds after the release; the
+    // idle one keeps it away for at least 80 ms.
     await waitProbeCalls(view, probe, 3);
+    const waited = (probe.calledAt[2] ?? 0) - releasedAt;
+    assert.ok(waited >= 40, `the third sample came ${waited.toFixed(0)} ms after the second one`);
   } finally {
     await act(async () => {
       view.renderer.destroy();

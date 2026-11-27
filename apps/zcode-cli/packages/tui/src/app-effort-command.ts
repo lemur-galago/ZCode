@@ -35,11 +35,11 @@ export function useEffortCommandController(
     [filteredOptions, selection],
   );
 
-  return {
-    filteredOptions,
-    reconcileDraft,
-    selectedOption,
-    selection,
-    setSelection,
-  };
+  // Local patch (panel-memo): the same object for as long as its members are.
+  // The app builds the setter of the composer draft from it, and that setter
+  // is a prop of the memoized composer.
+  return React.useMemo(
+    () => ({ filteredOptions, reconcileDraft, selectedOption, selection, setSelection }),
+    [filteredOptions, reconcileDraft, selectedOption, selection, setSelection],
+  );
 }

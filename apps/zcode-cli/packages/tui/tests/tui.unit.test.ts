@@ -3,7 +3,7 @@ import test from "node:test";
 import { SessionEventType, type SessionEvent } from "@zcode/contracts";
 import { getZCodeCopy } from "@zcode/i18n";
 import { LoginRequiredPanel } from "../src/app-components.js";
-import { ContentPane, MessageRow } from "../src/app-transcript-components.js";
+import { ContentPane, MemoizedMessageRow, MessageRow } from "../src/app-transcript-components.js";
 import { EmptyTranscriptLogo, ZCODE_LOGO_LINES } from "../src/app-empty-transcript.js";
 import { SHIMMER_SWEEP_PERIOD_MS, shimmerTextSegments } from "../src/app-motion.js";
 import { ShikiDiffView, buildDiffRows, buildSplitDiffRows } from "../src/app-shiki-diff-view.js";
@@ -94,7 +94,10 @@ test("hides the empty transcript logo when messages are present", () => {
   );
   const lines = collectTextLines(MessageRow({ copy: EN_COPY, index: 0, message }));
 
-  assert.equal(child?.type, MessageRow);
+  // Local patch (transcript-row-memo): the transcript draws the memoized row,
+  // which is MessageRow under React.memo.
+  assert.equal(child?.type, MemoizedMessageRow);
+  assert.equal((MemoizedMessageRow as unknown as { type: unknown }).type, MessageRow);
   assert.notEqual(child?.type, EmptyTranscriptLogo);
   assert.equal(lines.includes(ZCODE_LOGO_LINES[0]), false);
   assert.ok(lines.some((line) => line.includes("hello")));

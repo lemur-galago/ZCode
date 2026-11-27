@@ -1,7 +1,6 @@
 import React from "react";
 import type { TuiCopy } from "@zcode/i18n";
 import type { Message } from "./app-model.js";
-import { palette } from "./app-model.js";
 import { EmptyTranscriptLogo } from "./app-empty-transcript.js";
 import { DEFAULT_TUI_COPY } from "./app-locale.js";
 // Local patch (script-highlight): scripts in user messages.
@@ -15,6 +14,8 @@ import { ThoughtTranscriptPartView } from "./app-thought-components.js";
 import { ToolTranscriptPartView } from "./app-tool-components.js";
 import { WorkflowRunCardView } from "./app-workflow-card.js";
 import type { TuiWorkflowCard } from "./app-workflow-mirror.js";
+// Local patch (transcript-row-memo).
+import { activeTuiTheme, type TuiThemeTokens } from "./theme/index.js";
 
 const h = React.createElement as (
   type: React.ElementType | string,
@@ -24,6 +25,43 @@ const h = React.createElement as (
 
 const USER_MESSAGE_VERTICAL_PADDING = 1;
 
+// Local patch (transcript-row-memo): one style object per theme. The transcript
+// re-renders whenever the app does, and a fresh object each time made OpenTUI
+// re-apply the nested options of the scroll box on every such render.
+const scrollboxStyles = new WeakMap<TuiThemeTokens, Record<string, unknown>>();
+
+function transcriptScrollboxStyle(theme: TuiThemeTokens): Record<string, unknown> {
+  let style = scrollboxStyles.get(theme);
+  if (style === undefined) {
+    style = {
+      backgroundColor: theme.background,
+      border: false,
+      flexGrow: 1,
+      marginBottom: 1,
+      minHeight: 8,
+      contentOptions: {
+        backgroundColor: theme.background,
+        flexDirection: "column",
+        padding: 1,
+      },
+      rootOptions: {
+        backgroundColor: theme.background,
+      },
+      scrollbarOptions: {
+        showArrows: true,
+      },
+      viewportOptions: {
+        backgroundColor: theme.background,
+      },
+      wrapperOptions: {
+        backgroundColor: theme.background,
+      },
+    };
+    scrollboxStyles.set(theme, style);
+  }
+  return style;
+}
+
 export function ContentPane({
   animateEmptyLogo = false,
   copy = DEFAULT_TUI_COPY,
@@ -32,6 +70,8 @@ export function ContentPane({
   id,
   focused,
   messages,
+  // Local patch (transcript-row-memo): the theme of the rows, see MessageRow.
+  theme = activeTuiTheme(),
   terminalWidth = 100,
   workflowCardsByToolCallId,
 }: {
@@ -42,6 +82,7 @@ export function ContentPane({
   id?: string;
   focused: boolean;
   messages: Message[];
+  theme?: TuiThemeTokens;
   terminalWidth?: number;
   workflowCardsByToolCallId?: ReadonlyMap<string, TuiWorkflowCard>;
 }): React.ReactElement {
@@ -56,45 +97,23 @@ export function ContentPane({
       // Local patch (transcript-scrollbar): the parts of the scrollbar draw
       // themselves after their stock drawing.
       ref: trackTranscriptScroller,
-      style: {
-        backgroundColor: palette.background,
-        border: false,
-        flexGrow: 1,
-        marginBottom: 1,
-        minHeight: 8,
-        contentOptions: {
-          backgroundColor: palette.background,
-          flexDirection: "column",
-          padding: 1,
-        },
-        rootOptions: {
-          backgroundColor: palette.background,
-        },
-        scrollbarOptions: {
-          showArrows: true,
-        },
-        viewportOptions: {
-          backgroundColor: palette.background,
-        },
-        wrapperOptions: {
-          backgroundColor: palette.background,
-        },
-      },
+      style: transcriptScrollboxStyle(theme),
     },
     ...(messages.length === 0
       ? [
           emptyText
-            ? h("text", { key: "empty", style: { fg: palette.muted } }, emptyText)
+            ? h("text", { key: "empty", style: { fg: theme.textMuted } }, emptyText)
             : h(EmptyTranscriptLogo, { animated: animateEmptyLogo, key: "empty-transcript-logo" }),
         ]
       : messages.map((message, index) =>
-          h(MessageRow, {
+          h(MemoizedMessageRow, {
             copy,
             expandedWorkflowRunIds,
             index,
             key: `${index}-${message.role}`,
             message,
             terminalWidth,
+            theme,
             workflowCardsByToolCallId,
           }),
         )),
@@ -105,6 +124,12 @@ export function MessageRow({
   copy = DEFAULT_TUI_COPY,
   expandedWorkflowRunIds,
   message,
+  // Local patch (transcript-row-memo): the theme is a prop. The row reads it
+  // while it renders, and through MemoizedMessageRow it renders only when its
+  // props change: handing it the theme is what makes a theme switch draw the
+  // rows again. It is the built-in theme object of the active mode, so it
+  // changes only on a switch.
+  theme = activeTuiTheme(),
   terminalWidth = 100,
   workflowCardsByToolCallId,
 }: {
@@ -112,18 +137,19 @@ export function MessageRow({
   expandedWorkflowRunIds?: ReadonlySet<string>;
   index: number;
   message: Message;
+  theme?: TuiThemeTokens;
   terminalWidth?: number;
   workflowCardsByToolCallId?: ReadonlyMap<string, TuiWorkflowCard>;
 }): React.ReactElement {
   const parts = message.parts ?? [];
   if (message.role === "timeline") {
-    return h(CompactTimelineRow, { copy, message, terminalWidth });
+    return h(CompactTimelineRow, { copy, message, terminalWidth, theme });
   }
   // speaker labels were visually noisy; only user prompts carry row chrome.
   const isUserMessage = message.role === "user";
-  const rowBackground = isUserMessage ? palette.userMessageBackground : palette.background;
+  const rowBackground = isUserMessage ? theme.backgroundMessageUser : theme.background;
   const assistantText = message.role === "agent";
-  const plainTextColor = message.role === "system" ? palette.warning : palette.text;
+  const plainTextColor = message.role === "system" ? theme.warning : theme.text;
 
   return h(
     "box",
@@ -197,6 +223,15 @@ export function MessageRow({
   );
 }
 
+// Local patch (transcript-row-memo): the transcript draws its rows through this
+// component. React draws a memoized component again only when one of its props
+// changed. The props are the whole input of a row, and the state updates of a
+// stream keep every message object they do not touch, so a landing of stream
+// text draws the row whose message changed and no other; before, every landing
+// drew the whole transcript again, and that cost grew with the history. The
+// theme is one of the props (see MessageRow).
+export const MemoizedMessageRow = React.memo(MessageRow);
+
 // Local patch (script-highlight): a user message shows the scripts it holds in
 // color, as in the composer where it was typed; prose stays the plain text
 // element it always was.
@@ -211,10 +246,13 @@ function CompactTimelineRow({
   copy,
   message,
   terminalWidth,
+  // Local patch (transcript-row-memo).
+  theme,
 }: {
   copy: TuiCopy;
   message: Message;
   terminalWidth: number;
+  theme: TuiThemeTokens;
 }): React.ReactElement {
   const timeline = message.timeline;
   if (!timeline || timeline.type !== "context_compaction") {
@@ -245,18 +283,18 @@ function CompactTimelineRow({
   const line = "-".repeat(sideWidth);
   const color =
     timeline.status === "failed"
-      ? palette.warning
+      ? theme.warning
       : timeline.status === "started"
-        ? palette.accent
+        ? theme.accent
         : timeline.status === "retrying"
-          ? palette.accent
-          : palette.muted;
+          ? theme.accent
+          : theme.textMuted;
 
   return h(
     "box",
     {
       style: {
-        backgroundColor: palette.background,
+        backgroundColor: theme.background,
         flexDirection: "column",
         marginBottom: 1,
         minHeight: 1,

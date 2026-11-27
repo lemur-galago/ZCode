@@ -38,8 +38,17 @@ export function useSubmitValue(input: {
   setStatusDetails: React.Dispatch<React.SetStateAction<string[]>>;
   turnRef: React.MutableRefObject<AbortController | undefined>;
 }): (submittedValue: string, options?: SubmitValueOptions) => Promise<void> {
+  // Local patch (panel-memo): the input is a fresh object on every render of the
+  // app, and the function used to be a fresh one with it. The composer and the
+  // status row receive it as a prop and are drawn again whenever a prop
+  // changes, so the function is now the same object for as long as the hook
+  // lives and reads the input of the latest render when it is called. A handler
+  // runs after the render that changed the input, as it did with the closure.
+  const latest = React.useRef(input);
+  latest.current = input;
   return React.useCallback(
     async (submittedValue: string, options: SubmitValueOptions = {}) => {
+      const input = latest.current;
       const text = input.resolveSubmittedText(submittedValue).trim();
       const modelSelection = input.resolveSubmittedModel?.(submittedValue);
       if (!text) {
@@ -89,6 +98,6 @@ export function useSubmitValue(input: {
         turnRef: input.turnRef,
       });
     },
-    [input],
+    [],
   );
 }

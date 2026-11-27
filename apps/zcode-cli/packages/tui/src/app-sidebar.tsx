@@ -35,6 +35,8 @@ import {
   type SidebarSectionId,
   type SidebarSectionExpansion,
 } from "./app-sidebar-layout.js";
+// Local patch (panel-memo).
+import type { TuiThemeTokens } from "./theme/index.js";
 
 export { SIDEBAR_CONTENT_WIDTH } from "./app-sidebar-layout.js";
 
@@ -73,6 +75,12 @@ export type SidebarProps = SidebarState & {
   // and the handler a click on such a row wakes.
   listExpansion?: Partial<SidebarListExpansion>;
   onToggleList?: (list: SidebarListId) => void;
+  // Local patch (panel-memo): the theme the sidebar is drawn in. Its colors
+  // are read from the active theme, which the app sets before the view
+  // renders; the prop is what makes the memoized sidebar (MemoizedSidebar in
+  // app-view.tsx) draw itself again when the theme changes. It is the built-in
+  // theme object of the active mode, so it changes only on a switch.
+  theme?: TuiThemeTokens;
 };
 
 export function Sidebar(props: SidebarProps): React.ReactElement {

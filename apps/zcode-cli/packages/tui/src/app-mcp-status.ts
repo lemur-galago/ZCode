@@ -55,7 +55,13 @@ export function useMcpSidebarStatus(
 
   useEffect(() => {
     if (!listMcpServers) {
-      setState({ loading: false, servers: {} });
+      // Local patch (panel-memo): the state it already is, is kept as the same
+      // object: a fresh one drew the memoized sidebar once more at the mount.
+      setState((current) =>
+        !current.loading && current.error === undefined && Object.keys(current.servers).length === 0
+          ? current
+          : { loading: false, servers: {} },
+      );
       return;
     }
     const loadMcpServers = listMcpServers;

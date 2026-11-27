@@ -46,12 +46,20 @@ import type { TuiEffortOption, TuiModeOption, TuiOptions } from "./types.js";
 import type { TuiWorkflowCard } from "./app-workflow-mirror.js";
 import type { SubagentItem, SubagentsController } from "./app-subagents.js";
 import { SubagentView } from "./app-subagent-view.js";
+import { activeTuiTheme, type TuiThemeTokens } from "./theme/index.js";
 
 const h = React.createElement as (
   type: React.ElementType | string,
   props?: Record<string, unknown> | null,
   ...children: React.ReactNode[]
 ) => React.ReactElement;
+
+// Local patch (panel-memo): the same objects for as long as the view lives. A
+// fresh empty list or a fresh function on every render of the view is a
+// changed prop for a memoized component, and drew it for nothing.
+const NO_QUEUED_INPUTS: QueuedInput[] = [];
+const noDraftChange = () => {};
+const noSubmit = () => {};
 
 export function AppView(props: {
   subagents?: SubagentsController;
@@ -119,18 +127,31 @@ export function AppView(props: {
   todos: TodoItem[];
   toggleSidebarSection?: (section: SidebarSectionId) => boolean;
   traceId?: string;
+  // Local patch (transcript-row-memo): the theme the view is drawn in, passed
+  // down to the memoized parts; the active one unless given.
+  theme?: TuiThemeTokens;
   terminalWidth: number;
   usage?: ModelUsageSummary;
   workflowCardsByToolCallId?: ReadonlyMap<string, TuiWorkflowCard>;
   expandedWorkflowRunIds?: ReadonlySet<string>;
 }): React.ReactElement {
   const readOnly = Boolean(props.subagents?.selected);
+  const theme = props.theme ?? activeTuiTheme();
   const handleShellMouseUp = React.useCallback(() => {
     // Local patch (persistent-selection): the text is copied on release as
     // before, but the highlight stays until it is copied again or dismissed.
     props.copyCurrentSelection({ keepSelection: true });
     if (!readOnly) props.editorRef.current?.focus();
   }, [props.copyCurrentSelection, props.editorRef, readOnly]);
+  // Local patch (panel-memo): the handler of the sidebar is a prop of the
+  // memoized sidebar, so it is the same function while its inputs are.
+  const openSubagent = React.useCallback(
+    (item: SubagentItem) => {
+      props.subagents?.open(item);
+      if (props.sidebarLayout.overlay) props.toggleSidebar?.();
+    },
+    [props.subagents, props.sidebarLayout.overlay, props.toggleSidebar],
+  );
   const actionPanelContentWidth = actionPanelContentWidthForTerminal(
     props.terminalWidth,
     props.sidebarLayout.reservedWidth,
@@ -150,19 +171,17 @@ export function AppView(props: {
     : props.messages;
 
   // 旧的测试入口和嵌入式调用不会传 queuedInputs；默认空队列，避免队列面板在无数据时打断焦点交互。
-  const queuedInputs = props.queuedInputs ?? [];
+  // Local patch (panel-memo): the default is one list, see NO_QUEUED_INPUTS.
+  const queuedInputs = props.queuedInputs ?? NO_QUEUED_INPUTS;
   const composerSelection = props.selection?.placement === "composer" ? props.selection : undefined;
   const actionSelection = props.selection && !composerSelection ? props.selection : undefined;
   // Local patch (sidebar-fold): the state of the folded lists lives here and
   // not in the sidebar, which the narrow overlay unmounts when it closes.
   const sidebarFold = useSidebarFold();
   const sidebar = props.sidebarLayout.visible
-    ? h(Sidebar, {
+    ? h(MemoizedSidebar, {
         subagents: props.subagents,
-        onOpenSubagent: (item: SubagentItem) => {
-          props.subagents?.open(item);
-          if (props.sidebarLayout.overlay) props.toggleSidebar?.();
-        },
+        onOpenSubagent: openSubagent,
         activeTurnId: props.activeTurnId,
         busy: props.busy,
         cacheStats: props.cacheStats,
@@ -195,6 +214,8 @@ export function AppView(props: {
         // Local patch (sidebar-fold).
         listExpansion: sidebarFold.listExpansion,
         onToggleList: sidebarFold.onToggleList,
+        // Local patch (panel-memo): the theme, see SidebarProps.
+        theme,
       })
     : null;
 
@@ -223,6 +244,7 @@ export function AppView(props: {
         focused: false,
         messages: transcriptMessages,
         terminalWidth: actionPanelContentWidth,
+        theme,
         workflowCardsByToolCallId: props.workflowCardsByToolCallId,
         expandedWorkflowRunIds: props.expandedWorkflowRunIds,
       }),
@@ -239,7 +261,7 @@ export function AppView(props: {
               copy: props.copy,
               selection: actionSelection,
             })
-          : h(ComposerInputArea, {
+          : h(MemoizedComposerInputArea, {
               focused: !readOnly,
               busy: props.busy,
               contentWidth: actionPanelContentWidth,
@@ -272,11 +294,13 @@ export function AppView(props: {
               onStatusDirClick: readOnly ? undefined : props.onStatusDirClick,
               queuedInputs,
               selection: composerSelection,
-              setDraftValue: readOnly ? () => {} : props.setDraftValue,
+              setDraftValue: readOnly ? noDraftChange : props.setDraftValue,
               slashCommands: props.slashCommands,
               slashSelection: props.slashSelection,
-              submitValue: readOnly ? () => {} : props.submitValue,
+              submitValue: readOnly ? noSubmit : props.submitValue,
               thoughtLevel: props.thoughtLevel,
+              // Local patch (panel-memo): the theme, see the props of the composer area.
+              theme,
               workingDirectories: props.workingDirectories,
               workingDirectory: props.options.workspaceDirectory,
             }),
@@ -331,6 +355,10 @@ export function ComposerInputArea(props: {
   slashSelection?: SlashSelectionState;
   submitValue: (value: string) => void;
   thoughtLevel: string;
+  // Local patch (panel-memo): the theme the composer area is drawn in, the
+  // key that makes MemoizedComposerInputArea draw itself again on a theme
+  // switch; its parts read the colors from the active theme, as the sidebar does.
+  theme?: TuiThemeTokens;
 }): React.ReactElement {
   return h(
     React.Fragment,
@@ -438,3 +466,18 @@ export function ComposerInputArea(props: {
     }),
   );
 }
+
+// Local patch (panel-memo): the sidebar and the composer area as the view
+// renders them. React draws a memoized component again only when one of its
+// props changed, so they are drawn for their own data now and not because a
+// landing of stream text drew the view: before, every landing drew both, and
+// the composer area with its status row is the larger part of what a landing
+// of text still cost once the rows of the transcript stopped drawing.
+// That holds only as long as every prop keeps its object while its value is
+// the same, which is what the app does for the functions it hands down (the
+// submit function, the setter of the draft, the click handlers of the status
+// row, the subagent controller) and this view does for its own (the handler
+// of the sidebar, the empty queue, the read-only no-ops). The theme is a prop
+// of both, so a theme switch draws them again.
+export const MemoizedSidebar = React.memo(Sidebar);
+export const MemoizedComposerInputArea = React.memo(ComposerInputArea);

@@ -145,12 +145,16 @@ function upsertToolPart(
   let found = false;
   const updated = messages.map((message) => {
     if (!message.parts) return message;
+    // Local patch (transcript-row-memo): the match is per message. The shared
+    // flag rebuilt every later message with parts, so their rows drew again.
+    let messageFound = false;
     const parts = message.parts.map((item) => {
       if (item.type !== "tool" || item.toolCallId !== part.toolCallId) return item;
       found = true;
+      messageFound = true;
       return { ...item, ...part };
     });
-    return found ? { ...message, parts } : message;
+    return messageFound ? { ...message, parts } : message;
   });
 
   if (found) return updated;
@@ -195,12 +199,15 @@ function updateOrAppendToolPart(
   let found = false;
   const updated = messages.map((message) => {
     if (!message.parts) return message;
+    // Local patch (transcript-row-memo): per message, as in upsertToolPart.
+    let messageFound = false;
     const parts = message.parts.map((part) => {
       if (part.type !== "tool" || part.toolCallId !== toolCallId) return part;
       found = true;
+      messageFound = true;
       return { ...part, toolName, ...patch };
     });
-    return found ? { ...message, parts } : message;
+    return messageFound ? { ...message, parts } : message;
   });
 
   if (found) return updated;
