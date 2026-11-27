@@ -234,7 +234,7 @@ test("the notice lists the pools, then the plan, as clauses of falling importanc
   assert.deepEqual(accountQuotaPendingNotice(), { text: ACCOUNT_QUOTA_PENDING_NOTICE_TEXT });
 });
 
-test("shows the quota between the model and the compact glyph, one node per pool", () => {
+test("shows the quota between the model and the context badge, one node per pool", () => {
   const nodes = collectTextNodes(
     inputActiveStatusRow(COPY, undefined, { ...STATUS_OPTIONS, accountQuota: usageAt(), contentWidth: 120 }),
   );
@@ -247,8 +247,9 @@ test("shows the quota between the model and the compact glyph, one node per pool
     "  ",
     ...labels,
     "  ",
-    "🔄 ",
     BADGE,
+    " ",
+    "🔄",
   ]);
   const [week, separator, fiveHours] = nodes.slice(4, 7);
   assert.deepEqual(week?.style, { fg: palette.warning, flexShrink: 0 });
@@ -265,7 +266,7 @@ test("shows the quota between the model and the compact glyph, one node per pool
         processMemory: MEMORY,
       }),
     ).map((node) => node.text),
-    ["ram 610M · commit 520M", "  ", "GLM-5.3", " · ", "high", "  ", ...labels, "  ", "🔄 ", BADGE],
+    ["ram 610M · commit 520M", "  ", "GLM-5.3", " · ", "high", "  ", ...labels, "  ", BADGE, " ", "🔄"],
   );
 });
 
@@ -319,7 +320,8 @@ test("colors each pool by how full it is", () => {
 
 test("on a narrow terminal the effort and the model give way before the quota", () => {
   const quota = ["week 74%", " · ", "5h 10%"];
-  const quotaThenBadge = [...quota, "  ", "🔄 ", BADGE];
+  const badgeThenGlyph = [BADGE, " ", "🔄"];
+  const quotaThenBadge = [...quota, "  ", ...badgeThenGlyph];
   const textsAt = (contentWidth: number) =>
     collectTextNodes(
       inputActiveStatusRow(COPY, undefined, { ...STATUS_OPTIONS, accountQuota: usageAt(), contentWidth }),
@@ -334,12 +336,12 @@ test("on a narrow terminal the effort and the model give way before the quota", 
   assert.deepEqual(textsAt(43), quotaThenBadge);
   assert.deepEqual(textsAt(38), quotaThenBadge);
   // Both pools no longer fit: only the fuller one stays, ahead of a shortened model.
-  assert.deepEqual(textsAt(37), ["GLM...", "  ", "week 74%", "  ", "🔄 ", BADGE]);
-  assert.deepEqual(textsAt(34), ["week 74%", "  ", "🔄 ", BADGE]);
-  assert.deepEqual(textsAt(29), ["week 74%", "  ", "🔄 ", BADGE]);
+  assert.deepEqual(textsAt(37), ["GLM...", "  ", "week 74%", "  ", ...badgeThenGlyph]);
+  assert.deepEqual(textsAt(34), ["week 74%", "  ", ...badgeThenGlyph]);
+  assert.deepEqual(textsAt(29), ["week 74%", "  ", ...badgeThenGlyph]);
   // The badge and the compact glyph outrank the quota.
-  assert.deepEqual(textsAt(28), ["GLM-5.3", "  ", "🔄 ", BADGE]);
-  assert.deepEqual(textsAt(24), ["🔄 ", BADGE]);
+  assert.deepEqual(textsAt(28), ["GLM-5.3", "  ", ...badgeThenGlyph]);
+  assert.deepEqual(textsAt(24), badgeThenGlyph);
 });
 
 test("keeps only the fuller pool when both no longer fit", () => {
@@ -360,18 +362,18 @@ test("keeps only the fuller pool when both no longer fit", () => {
       inputActiveStatusRow(COPY, undefined, { ...STATUS_OPTIONS, accountQuota, contentWidth }),
     ).map((node) => node.text);
 
-  // 6 cells for "5h 96%", 2 for the gap, 3 for the glyph, 15 for the badge.
-  assert.deepEqual(textsAt(27), ["5h 96%", "  ", "🔄 ", BADGE]);
-  assert.deepEqual(textsAt(54), ["GLM-5.3", " · ", "high", "  ", "week 12%", " · ", "5h 96%", "  ", "🔄 ", BADGE]);
+  // 6 cells for "5h 96%", 2 for the gap, 3 for the glyph with its gap, 15 for the badge.
+  assert.deepEqual(textsAt(27), ["5h 96%", "  ", BADGE, " ", "🔄"]);
+  assert.deepEqual(textsAt(54), ["GLM-5.3", " · ", "high", "  ", "week 12%", " · ", "5h 96%", "  ", BADGE, " ", "🔄"]);
   // One cell less than the pool needs: the quota is gone and the model takes the room.
-  assert.deepEqual(textsAt(26), ["GL...", "  ", "🔄 ", BADGE]);
+  assert.deepEqual(textsAt(26), ["GL...", "  ", BADGE, " ", "🔄"]);
 });
 
 test("keeps the row unchanged when no quota is known", () => {
   const texts = collectTextNodes(
     inputActiveStatusRow(COPY, undefined, { ...STATUS_OPTIONS, accountQuota: undefined, contentWidth: 120 }),
   ).map((node) => node.text);
-  assert.deepEqual(texts, ["GLM-5.3", " · ", "high", "  ", "🔄 ", BADGE]);
+  assert.deepEqual(texts, ["GLM-5.3", " · ", "high", "  ", BADGE, " ", "🔄"]);
   assert.equal(texts.some((text) => /^(?:week|\d+h) \d+%$/u.test(text)), false);
 });
 
@@ -393,13 +395,15 @@ test("a quota notice owns the row and loses whole clauses before any is cut", ()
     ).map((node) => node.text);
   const left = [frame, " ", COPY.input.activeStatusHint];
 
-  // Model, effort, memory and the quota give way; the context badge with the compact glyph stay.
+  // Model, effort, memory and the quota give way; the context badge with the compact glyph stay
+  // (the glyph with its gap takes 3 cells).
   assert.deepEqual(textsAt(displayWidth(full) + 2 + 3 + displayWidth(BADGE)), [
     ...left,
     full,
     "  ",
-    "🔄 ",
     BADGE,
+    " ",
+    "🔄",
   ]);
   // No room for the whole notice: the plan clause goes first, then the 5-hour one.
   assert.deepEqual(textsAt(displayWidth(full) - 1), [...left, `${week} · ${fiveHours}`, "  ", BADGE]);

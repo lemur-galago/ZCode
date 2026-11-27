@@ -40,7 +40,7 @@ const STATUS_OPTIONS = {
   onStatusCompactMouseDown: () => undefined,
   thoughtLevel: "high",
 };
-const RIGHT_GROUP_AFTER_MEMORY = ["GLM-5.3", " · ", "high", "  ", "🔄 ", "45.2K / 1M (5%)"];
+const RIGHT_GROUP_AFTER_MEMORY = ["GLM-5.3", " · ", "high", "  ", "45.2K / 1M (5%)", " ", "🔄"];
 
 type TextNode = {
   onMouseDown?: (event: { preventDefault: () => void; stopPropagation: () => void }) => void;
@@ -210,7 +210,7 @@ test("drops the memory segment before anything else on a narrow terminal", () =>
   assert.deepEqual(textsAt(58), RIGHT_GROUP_AFTER_MEMORY);
   // Below that the existing order applies: effort first, then the model.
   assert.deepEqual(textsAt(40), RIGHT_GROUP_AFTER_MEMORY);
-  assert.deepEqual(textsAt(30), ["GLM-5.3", "  ", "🔄 ", "45.2K / 1M (5%)"]);
+  assert.deepEqual(textsAt(30), ["GLM-5.3", "  ", "45.2K / 1M (5%)", " ", "🔄"]);
 });
 
 test("keeps the row unchanged when no memory usage is known", () => {
@@ -245,8 +245,9 @@ test("a notice owns the row while it is shown", () => {
     " ",
     `zcode --resume ${SESSION_ID}`,
     "  ",
-    "🔄 ",
     "45.2K / 1M (5%)",
+    " ",
+    "🔄",
   ]);
   const command = nodes.find((node) => node.text.startsWith("zcode --resume"));
   assert.deepEqual(command?.style, { fg: palette.accent, flexShrink: 0 });
@@ -271,6 +272,7 @@ test("a notice keeps the command whole on a narrow terminal", () => {
   const command = `zcode --resume ${SESSION_ID}`;
   const left = [frame, " ", COPY.input.activeStatusHint];
   const fullNoticeWidth = displayWidth(notice.text ?? "") + 1 + displayWidth(command);
+  // The glyph with its gap takes 3 cells.
   const rightGroupWidth = 3 + displayWidth("45.2K / 1M (5%)");
 
   // Everything fits: the notice and the rest of the row.
@@ -280,8 +282,9 @@ test("a notice keeps the command whole on a narrow terminal", () => {
     " ",
     command,
     "  ",
-    "🔄 ",
     "45.2K / 1M (5%)",
+    " ",
+    "🔄",
   ]);
   // The notice no longer fits whole: the right group gives way and the text is
   // shortened; the command is the part worth copying, so it stays whole.

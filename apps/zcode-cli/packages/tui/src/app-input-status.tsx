@@ -29,12 +29,16 @@ const ACTIVE_STATUS_CONTEXT_SPACER_WIDTH = 1;
 // row's right-aligned group "model · effort  context badge".
 const STATUS_MODEL_EFFORT_SEPARATOR = " · ";
 const STATUS_RIGHT_GROUP_GAP = "  ";
-// Local patch (status-compact-button): clickable compact trigger glyph. The
-// emoji renders ~1.7x taller than text glyphs (user asked for a bigger icon)
-// and takes 2 terminal cells; displayWidth() undercounts astral emoji, so the
-// budget uses the explicit width below (2 cells + 1 trailing space = hit area).
-const STATUS_COMPACT_GLYPH = "🔄 ";
-const STATUS_COMPACT_GLYPH_WIDTH = 3;
+// Local patch (status-compact-button): clickable compact trigger glyph, the
+// last segment of the row - right after the context badge (user asked for it
+// at the far right). The emoji renders ~1.7x taller than text glyphs and
+// takes 2 terminal cells; displayWidth() undercounts astral emoji, so the
+// budget uses the explicit width below. The glyph sits one cell after the
+// badge - the room its trailing space took before the move - so the row keeps
+// its width; after any other segment the usual gap separates it.
+const STATUS_COMPACT_GLYPH = "🔄";
+const STATUS_COMPACT_GLYPH_WIDTH = 2;
+const STATUS_COMPACT_BADGE_GAP = " ";
 // Local patch (process-memory-indicator): the session's memory usage segment
 // ("ram <working set> · commit <commit size>") and the transient notice a click
 // on it shows in the left part of the row. The notice owns the row while it is
@@ -379,20 +383,31 @@ export function inputActiveStatusRow(
         )
       : null,
     // Local patch (account-quota-indicator): the account quota between the
-    // model and the compact glyph, separated like the badge is, one text node
+    // model and the context badge, separated like the badge is, one text node
     // per pool with its own color; a click on a pool shows the details.
     (rightGroup?.badge || rightGroup?.quota?.length) &&
     (rightGroup.model || rightGroup.effort)
       ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, STATUS_RIGHT_GROUP_GAP)
       : null,
     ...(rightGroup?.quota ? renderStatusQuota(rightGroup.quota, options.onStatusQuotaMouseDown) : []),
-    rightGroup?.quota?.length && (rightGroup.compact || rightGroup.badge)
+    rightGroup?.quota?.length && (rightGroup.badge || rightGroup.compact)
       ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, STATUS_RIGHT_GROUP_GAP)
       : null,
-    // Local patch (status-compact-button): clickable compact glyph right before
-    // the context badge; a compact emoji target (2 cells + trailing space) for
-    // the same /compact command the composer submits — the badge itself stays
-    // a plain indicator.
+    rightGroup?.badge
+      ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, rightGroup.badge)
+      : null,
+    // Local patch (status-compact-button): clickable compact glyph, the last
+    // segment of the row, right after the context badge; a compact emoji
+    // target (2 cells) for the same /compact command the composer submits —
+    // the badge itself stays a plain indicator.
+    rightGroup?.compact &&
+    (rightGroup.badge || rightGroup.quota?.length || rightGroup.model || rightGroup.effort)
+      ? h(
+          "text",
+          { style: { fg: palette.muted, flexShrink: 0 } },
+          rightGroup.badge ? STATUS_COMPACT_BADGE_GAP : STATUS_RIGHT_GROUP_GAP,
+        )
+      : null,
     rightGroup?.compact
       ? h(
           "text",
@@ -403,9 +418,6 @@ export function inputActiveStatusRow(
           },
           STATUS_COMPACT_GLYPH,
         )
-      : null,
-    rightGroup?.badge
-      ? h("text", { style: { fg: palette.muted, flexShrink: 0 } }, rightGroup.badge)
       : null,
   );
 }
@@ -723,13 +735,16 @@ function fitStatusRightGroup(
     remaining -= displayWidth(badge);
   }
 
+  // Local patch (status-compact-button): the glyph closes the row, so the
+  // gap it keeps after the badge is part of its width.
   let compact = parts.compact;
-  if (compact && STATUS_COMPACT_GLYPH_WIDTH > remaining) compact = undefined;
-  if (compact) remaining -= STATUS_COMPACT_GLYPH_WIDTH;
+  const compactWidth = STATUS_COMPACT_GLYPH_WIDTH + (badge ? displayWidth(STATUS_COMPACT_BADGE_GAP) : 0);
+  if (compact && compactWidth > remaining) compact = undefined;
+  if (compact) remaining -= compactWidth;
 
-  // Local patch (account-quota-indicator): the quota comes right after the
-  // badge and the compact glyph and yields to them only; the model and the
-  // effort, which precede it in the row, get what is left.
+  // Local patch (account-quota-indicator): the quota yields to the context
+  // badge and to the compact glyph only - the two right-most segments; the
+  // model and the effort, which precede it in the row, get what is left.
   const quotaLeads = Boolean(badge || compact);
   const quota = fitStatusQuota(parts.quota, quotaLeads ? remaining - gapWidth : remaining);
   if (quota) remaining -= statusQuotaWidth(quota) + (quotaLeads ? gapWidth : 0);

@@ -308,7 +308,7 @@ export function ComposerInputArea(props: {
   onStatusModelClick?: () => void;
   onStatusEffortClick?: () => void;
   // Local patch (status-compact-button): click handler for the compact glyph
-  // rendered right before the context badge.
+  // rendered after the context badge, the last segment of the status row.
   onStatusCompactClick?: () => void;
   // Local patch (process-memory-indicator).
   processMemory?: ProcessMemoryUsage;
