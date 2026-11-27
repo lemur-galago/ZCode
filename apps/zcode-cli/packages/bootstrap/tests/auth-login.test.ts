@@ -217,7 +217,7 @@ describe("ZCode CLI login", () => {
       expect(result).toMatchObject({
         configPath: personalProviderConfigPath,
         credentialsPath: credentialStore.filePath,
-        model: `${BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan}/GLM-5.3`,
+        model: `${BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan}/GLM-5.4`,
         providerId: "zai",
         user: {
           user_id: "u_1",
@@ -244,7 +244,7 @@ describe("ZCode CLI login", () => {
         config: {
           defaultModelSelection: {
             providerId: BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan,
-            modelId: "GLM-5.3",
+            modelId: "GLM-5.4",
           },
         },
       });
