@@ -207,6 +207,9 @@ if (-not $SkipBuild) {
         Expand-Archive $zip -DestinationPath $toolchain -Force
         $useNode = $nodeDir
     }
+    # Only the extracted distribution is kept: an archive next to it is a leftover of this download or
+    # of an older installer, which never deleted it.
+    Remove-Item (Join-Path $toolchain "$name.zip") -Force -ErrorAction SilentlyContinue
     $env:PATH = "$useNode;$env:PATH"
     $corepack = Join-Path $useNode "corepack.cmd"
     Write-Host "   node        : $useNode"
@@ -293,6 +296,20 @@ $first = (Get-Command zcode -ErrorAction SilentlyContinue | Select-Object -First
 if ($KeepVersions -gt 0 -and $null -ne $runningNode) {
     Get-ChildItem $versions -Directory | Sort-Object Name -Descending | Select-Object -Skip $KeepVersions | ForEach-Object {
         if (-not (Test-RunningFrom $_.FullName)) { Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue }
+    }
+}
+
+# --- pnpm keeps every package version it ever downloaded in its store and removes none by itself, so
+# after updates the store only grows. Prune it once the install has succeeded; a failure here costs
+# disk space only and must not fail the install.
+if (-not $SkipBuild) {
+    Write-Host "== pnpm store prune"
+    Push-Location $repo
+    try {
+        Invoke-External $corepack @("pnpm", "store", "prune")
+        if ($LASTEXITCODE -ne 0) { Write-Warning "pnpm store prune exited with code $LASTEXITCODE (tolerated)" }
+    } finally {
+        Pop-Location
     }
 }
 

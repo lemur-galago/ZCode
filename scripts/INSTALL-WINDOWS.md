@@ -51,6 +51,11 @@ In Git Bash the command is `zcode` as well: a small shell wrapper is installed n
 A version that an open zcode window was started from is never deleted or replaced: it goes at the
 next install after that window is closed.
 
+After an install the installer also removes what it no longer needs itself: the downloaded Node.js
+archive once it is extracted (one left by an older installer goes at the next install), and the
+packages that no project uses any more from the store of pnpm, the package manager of the build,
+which never removes them on its own.
+
 ## Update
 
 `zcode` checks the fork once a day, before it starts. When there are new commits it lists them and
