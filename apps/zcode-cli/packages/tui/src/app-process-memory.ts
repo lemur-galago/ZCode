@@ -6,6 +6,7 @@
 import { execFile } from "node:child_process";
 import { useEffect, useRef, useState } from "react";
 import type { StatusNotice } from "./app-input-status.js";
+import { createOutputMarkers, readMarkedOutput, type OutputMarkers } from "./app-marked-output.js";
 
 export type ProcessMemorySample = {
   /** Private committed memory ("commit size"), when it can be read. */
@@ -91,10 +92,14 @@ export function processMemoryNotice(sessionId: string | undefined): StatusNotice
 
 type ExecFileRun = typeof execFile;
 
+// Local patch (marked-output): the number goes between the markers of the
+// call, so foreign lines in the output of powershell.exe (an injected hooking
+// DLL) no longer hide the commit size.
 /** Commit size of a process in bytes, read through PowerShell (Windows only). */
 export function readWindowsCommitBytes(
   run: ExecFileRun = execFile,
   pid: number = process.pid,
+  markers: OutputMarkers = createOutputMarkers(),
 ): Promise<number> {
   return new Promise((resolve, reject) => {
     run(
@@ -104,11 +109,11 @@ export function readWindowsCommitBytes(
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        `$p=[Diagnostics.Process]::GetProcessById(${pid}); [Console]::Out.Write($p.PagedMemorySize64)`,
+        `$p=[Diagnostics.Process]::GetProcessById(${pid}); [Console]::Out.Write('${markers.open}' + $p.PagedMemorySize64 + '${markers.close}')`,
       ],
       { encoding: "utf8", maxBuffer: 4096, timeout: PROCESS_MEMORY_PROBE_TIMEOUT_MS, windowsHide: true },
       (error, stdout) => {
-        const text = String(stdout).trim();
+        const text = readMarkedOutput(stdout, markers) ?? "";
         const bytes = /^\d+$/u.test(text) ? Number(text) : Number.NaN;
         if (error || !Number.isSafeInteger(bytes)) {
           reject(error ?? new Error("Commit size is not a number."));

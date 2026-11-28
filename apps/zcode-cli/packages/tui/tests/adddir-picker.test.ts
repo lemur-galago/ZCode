@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { OutputMarkers } from "../src/app-marked-output.js";
 import {
   createDirectoryPickerGate,
   isDirectoryPickerSupported,
@@ -10,6 +11,12 @@ type ExecFileCall = {
   args: string[];
   command: string;
 };
+
+const MARKERS: OutputMarkers = { close: "<<end>>", open: "<<begin>>" };
+// Local patch (marked-output): what an injected hooking DLL (mhook) adds to
+// the output of every process on some machines. The picker used to take it
+// for the chosen folder, so a cancel submitted `/adddir` of these lines.
+const NOISE = "[0x7FFDFF84B830] ANOMALY: meaningless REX prefix used\r\n";
 
 function fakeExecFile(output: string, error?: Error) {
   const calls: ExecFileCall[] = [];
@@ -26,8 +33,8 @@ function fakeExecFile(output: string, error?: Error) {
 }
 
 test("pickWindowsDirectory runs powershell STA with the FolderBrowserDialog script", async () => {
-  const { calls, run } = fakeExecFile("D:\\ZCode\\patches");
-  const picked = await pickWindowsDirectory(run);
+  const { calls, run } = fakeExecFile(`${MARKERS.open}D:\\ZCode\\patches${MARKERS.close}`);
+  const picked = await pickWindowsDirectory(run, MARKERS);
   assert.equal(picked, "D:\\ZCode\\patches");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].command, "powershell.exe");
@@ -36,21 +43,34 @@ test("pickWindowsDirectory runs powershell STA with the FolderBrowserDialog scri
   const script = calls[0].args[5] ?? "";
   assert.match(script, /FolderBrowserDialog/);
   assert.match(script, /SelectedPath/);
+  // The script wraps the path in the markers the reader looks for.
+  assert.ok(script.includes(`'${MARKERS.open}' + $dialog.SelectedPath + '${MARKERS.close}'`));
+});
+
+test("pickWindowsDirectory returns only the text between its markers", async () => {
+  const path = "C:\\Users\\muren\\Проекты";
+  const { run } = fakeExecFile(`${NOISE.repeat(2)}${MARKERS.open}${path}${MARKERS.close}${NOISE}`);
+  assert.equal(await pickWindowsDirectory(run, MARKERS), path);
 });
 
 test("pickWindowsDirectory resolves undefined on cancel (empty stdout)", async () => {
   const { run } = fakeExecFile("");
-  assert.equal(await pickWindowsDirectory(run), undefined);
+  assert.equal(await pickWindowsDirectory(run, MARKERS), undefined);
+});
+
+test("pickWindowsDirectory resolves undefined when a cancel leaves only foreign lines", async () => {
+  const { run } = fakeExecFile(NOISE.repeat(4));
+  assert.equal(await pickWindowsDirectory(run, MARKERS), undefined);
+});
+
+test("pickWindowsDirectory resolves undefined for a path that is not absolute", async () => {
+  const { run } = fakeExecFile(`${MARKERS.open}relative\\dir${MARKERS.close}`);
+  assert.equal(await pickWindowsDirectory(run, MARKERS), undefined);
 });
 
 test("pickWindowsDirectory rejects on subprocess error", async () => {
   const { run } = fakeExecFile("", new Error("powershell missing"));
-  await assert.rejects(() => pickWindowsDirectory(run), /powershell missing/);
-});
-
-test("pickWindowsDirectory trims surrounding whitespace from stdout", async () => {
-  const { run } = fakeExecFile("  D:\\tmp  \n");
-  assert.equal(await pickWindowsDirectory(run), "D:\\tmp");
+  await assert.rejects(() => pickWindowsDirectory(run, MARKERS), /powershell missing/);
 });
 
 test("isDirectoryPickerSupported matches win32 platform", () => {

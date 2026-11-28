@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import type { KeyEvent } from "@mbears/opentui-core";
 import type React from "react";
 import type { ActiveSelectionInput, SelectionState } from "./app-model.js";
+import { createOutputMarkers, readMarkedOutput, type OutputMarkers } from "./app-marked-output.js";
 
 type SetSelection = React.Dispatch<React.SetStateAction<SelectionState | undefined>>;
 type SetStatus = (status: string) => void;
@@ -55,7 +56,14 @@ export function handleSelectionPaste(
 
 type ExecFileRun = typeof execFile;
 
-export function readWindowsClipboardText(run: ExecFileRun = execFile): Promise<string> {
+// Local patch (marked-output): the text goes between the markers of the call,
+// so foreign lines in the output of powershell.exe (an injected hooking DLL)
+// are never pasted. Output without markers means the script did not run as
+// intended; the rejection shows the hint to use the terminal's own paste.
+export function readWindowsClipboardText(
+  run: ExecFileRun = execFile,
+  markers: OutputMarkers = createOutputMarkers(),
+): Promise<string> {
   return new Promise((resolve, reject) => {
     run(
       "powershell.exe",
@@ -65,10 +73,22 @@ export function readWindowsClipboardText(run: ExecFileRun = execFile): Promise<s
         "-NonInteractive",
         "-STA",
         "-Command",
-        "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); $text = Get-Clipboard -Raw; if ($null -ne $text) { [Console]::Write($text) }",
+        `[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); $text = Get-Clipboard -Raw; [Console]::Write('${markers.open}'); if ($null -ne $text) { [Console]::Write($text) }; [Console]::Write('${markers.close}')`,
       ],
       { windowsHide: true, encoding: "utf8", timeout: 5000, maxBuffer: 65536 },
-      (error, stdout) => (error ? reject(error) : resolve(stdout)),
+      (error, stdout) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        const text = readMarkedOutput(stdout, markers);
+        // The message quotes no output: the clipboard may hold credentials.
+        if (text === undefined) {
+          reject(new Error("The clipboard reader wrote no marked output."));
+          return;
+        }
+        resolve(text);
+      },
     );
   });
 }

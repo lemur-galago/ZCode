@@ -1,12 +1,18 @@
 import { execFile } from "node:child_process";
+import { isAbsolute } from "node:path";
 import type React from "react";
+import { createOutputMarkers, readMarkedOutput, type OutputMarkers } from "./app-marked-output.js";
 
 // Local patch (adddir-command): native folder picker behind the ➕ trigger.
 // Windows only — FolderBrowserDialog via powershell.exe -STA, the same
 // subprocess pattern as the clipboard reader in app-selection-paste.ts.
-// Writes the selected path to stdout (UTF-8, no newline); cancel/error write
-// nothing and resolve to undefined. The hidden owner form is TopMost so the
-// dialog lands in front of the terminal window instead of behind it.
+// Writes the selected path to stdout between the markers of the call (UTF-8,
+// no newline); cancel/error write nothing and resolve to undefined. The hidden
+// owner form is TopMost so the dialog lands in front of the terminal window
+// instead of behind it.
+// Local patch (marked-output): only the text between the markers is the path,
+// so foreign lines in the output (an injected hooking DLL) cannot turn a
+// cancel into `/adddir` of garbage.
 export function isDirectoryPickerSupported(): boolean {
   return process.platform === "win32";
 }
@@ -14,40 +20,37 @@ export function isDirectoryPickerSupported(): boolean {
 const PICKER_TIMEOUT_MS = 600_000;
 const PICKER_MAX_BUFFER = 32_768;
 
-const PICKER_SCRIPT = [
-  "$ErrorActionPreference='Stop'",
-  "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)",
-  "Add-Type -AssemblyName System.Windows.Forms",
-  "$dialog=New-Object System.Windows.Forms.FolderBrowserDialog",
-  "$dialog.Description='Select a working directory to add'",
-  "$dialog.ShowNewFolderButton=$false",
-  "$owner=New-Object System.Windows.Forms.Form",
-  "$owner.TopMost=$true",
-  "if($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){[Console]::Write($dialog.SelectedPath)}",
-].join("; ");
+const pickerScript = (markers: OutputMarkers): string =>
+  [
+    "$ErrorActionPreference='Stop'",
+    "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)",
+    "Add-Type -AssemblyName System.Windows.Forms",
+    "$dialog=New-Object System.Windows.Forms.FolderBrowserDialog",
+    "$dialog.Description='Select a working directory to add'",
+    "$dialog.ShowNewFolderButton=$false",
+    "$owner=New-Object System.Windows.Forms.Form",
+    "$owner.TopMost=$true",
+    `if($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){[Console]::Write('${markers.open}' + $dialog.SelectedPath + '${markers.close}')}`,
+  ].join("; ");
 
 type ExecFileRun = typeof execFile;
 
-export function pickWindowsDirectory(run: ExecFileRun = execFile): Promise<string | undefined> {
+export function pickWindowsDirectory(
+  run: ExecFileRun = execFile,
+  markers: OutputMarkers = createOutputMarkers(),
+): Promise<string | undefined> {
   return new Promise((resolve, reject) => {
     run(
       "powershell.exe",
-      [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-STA",
-        "-Command",
-        PICKER_SCRIPT,
-      ],
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command", pickerScript(markers)],
       { windowsHide: true, encoding: "utf8", timeout: PICKER_TIMEOUT_MS, maxBuffer: PICKER_MAX_BUFFER },
       (error, stdout) => {
         if (error) {
           reject(error);
           return;
         }
-        const picked = stdout.trim();
-        resolve(picked.length > 0 ? picked : undefined);
+        const picked = readMarkedOutput(stdout, markers);
+        resolve(picked !== undefined && isAbsolute(picked) ? picked : undefined);
       },
     );
   });

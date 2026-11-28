@@ -5,6 +5,7 @@ import { createTestRenderer } from "@mbears/opentui-core/testing";
 import { testRender } from "@mbears/opentui-react/test-utils";
 import type { UiThemeMode } from "@zcode/contracts";
 import { getZCodeCopy } from "@zcode/i18n";
+import type { OutputMarkers } from "../src/app-marked-output.js";
 import React, { act } from "react";
 import {
   InputActiveStatus,
@@ -108,6 +109,7 @@ test("builds a usage only from valid sample values", () => {
 });
 
 test("reads the commit size through a hidden PowerShell probe", async () => {
+  const markers: OutputMarkers = { close: "<<end>>", open: "<<begin>>" };
   const calls: Array<{ args: string[]; file: string; options: Record<string, unknown> }> = [];
   const run = ((
     file: string,
@@ -116,25 +118,40 @@ test("reads the commit size through a hidden PowerShell probe", async () => {
     callback: (error: Error | null, stdout: string) => void,
   ) => {
     calls.push({ args, file, options });
-    queueMicrotask(() => callback(null, "524288000\r\n"));
+    queueMicrotask(() => callback(null, `${markers.open}524288000${markers.close}\r\n`));
   }) as unknown as typeof execFile;
 
-  assert.equal(await readWindowsCommitBytes(run, 4242), 524288000);
+  assert.equal(await readWindowsCommitBytes(run, 4242, markers), 524288000);
   assert.equal(calls[0]?.file, "powershell.exe");
   assert.ok(calls[0]?.args.some((argument) => argument.includes("GetProcessById(4242)")));
   assert.ok(calls[0]?.args.some((argument) => argument.includes("PagedMemorySize64")));
+  // The script wraps the number in the markers the reader looks for.
+  assert.ok(calls[0]?.args.some((argument) => argument.includes(`'${markers.open}' + $p.PagedMemorySize64 + '${markers.close}'`)));
   assert.equal(calls[0]?.options.windowsHide, true);
   assert.ok(typeof calls[0]?.options.timeout === "number");
 
-  const failing = ((_file: string, _args: string[], _options: unknown, callback: (error: Error | null) => void) => {
+  const answering = (stdout: string) =>
+    ((_file: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: string) => void) => {
+      queueMicrotask(() => callback(null, stdout));
+    }) as unknown as typeof execFile;
+
+  const failing = ((
+    _file: string,
+    _args: string[],
+    _options: unknown,
+    callback: (error: Error | null, stdout: string) => void,
+  ) => {
     queueMicrotask(() => callback(new Error("PowerShell is not available"), ""));
   }) as unknown as typeof execFile;
-  await assert.rejects(readWindowsCommitBytes(failing, 4242), /PowerShell is not available/);
+  await assert.rejects(readWindowsCommitBytes(failing, 4242, markers), /PowerShell is not available/);
 
-  const garbage = ((_file: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: string) => void) => {
-    queueMicrotask(() => callback(null, "not a number"));
-  }) as unknown as typeof execFile;
-  await assert.rejects(readWindowsCommitBytes(garbage, 4242), /not a number/);
+  await assert.rejects(readWindowsCommitBytes(answering("not a number"), 4242, markers), /not a number/);
+
+  // Local patch (marked-output): foreign lines around the number are ignored;
+  // without the markers there is no number, so nothing is taken for one.
+  const noise = "[0x7FFDFF84B830] ANOMALY: meaningless REX prefix used\r\n";
+  assert.equal(await readWindowsCommitBytes(answering(`${noise}${markers.open}524288000${markers.close}${noise}`), 4242, markers), 524288000);
+  await assert.rejects(readWindowsCommitBytes(answering(noise), 4242, markers), /not a number/);
 });
 
 test("the notice carries the command that restarts the session", () => {
