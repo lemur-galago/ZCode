@@ -194,6 +194,8 @@ export function AppView(props: {
         // Local patch (adddir-command): workspace row add-directory trigger.
         additionalDirectoryCount: props.workingDirectories.length,
         onAddDirClick: readOnly ? undefined : props.onStatusAddDirClick,
+        // Local patch (adddir-count-click): the count in the footer lists the folders.
+        onListDirsClick: readOnly ? undefined : props.onStatusDirClick,
         mode: props.mode,
         model: props.model,
         modifiedFiles: props.modifiedFiles,

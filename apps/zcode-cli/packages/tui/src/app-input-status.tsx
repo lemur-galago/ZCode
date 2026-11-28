@@ -488,7 +488,16 @@ export function inputComposerStatusRow({
             folder.label,
           ),
           folder.count
-            ? h("text", { style: { fg: palette.accent, flexShrink: 0 } }, ` ${folder.count}`)
+            ? h(
+                "text",
+                {
+                  // Local patch (adddir-count-click): the count lists the folders too.
+                  onMouseDown: (event: { preventDefault: () => void; stopPropagation: () => void }) =>
+                    triggerStatusMouseHandler(event, onStatusDirMouseDown),
+                  style: { fg: palette.accent, flexShrink: 0 },
+                },
+                ` ${folder.count}`,
+              )
             : null,
           h("text", { style: { fg: palette.muted, flexShrink: 0 } }, "  "),
         )

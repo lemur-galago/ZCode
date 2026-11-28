@@ -71,6 +71,9 @@ export type SidebarProps = SidebarState & {
   // add-directory trigger ("➕" pinned to the row's right edge).
   onAddDirClick?: () => void;
   additionalDirectoryCount?: number;
+  // Local patch (adddir-count-click): a click on the count "(+N)" of the footer
+  // lists the additional directories.
+  onListDirsClick?: () => void;
   // Local patch (sidebar-fold): which folded lists ("+N more") are unfolded,
   // and the handler a click on such a row wakes.
   listExpansion?: Partial<SidebarListExpansion>;
@@ -217,6 +220,7 @@ export function Sidebar(props: SidebarProps): React.ReactElement {
 function workspaceFooterWithAddDir(props: SidebarProps): React.ReactElement {
   const count = props.additionalDirectoryCount ?? 0;
   const countText = count > 0 ? `(+${count}) ` : "";
+  const listDirs = props.onListDirsClick;
   const labelBudget = Math.max(
     1,
     SIDEBAR_CONTENT_WIDTH - SIDEBAR_ADD_DIR_GLYPH_WIDTH - displayWidth(countText),
@@ -241,6 +245,13 @@ function workspaceFooterWithAddDir(props: SidebarProps): React.ReactElement {
           "text",
           {
             key: "workspace-footer-count",
+            // Local patch (adddir-count-click): the count lists the folders.
+            onMouseDown: listDirs &&
+              ((event: { preventDefault: () => void; stopPropagation: () => void }) => {
+                event.preventDefault();
+                event.stopPropagation();
+                listDirs();
+              }),
             style: { ...SIDEBAR_TEXT_ROW_STYLE, fg: palette.accent },
           },
           countText,
